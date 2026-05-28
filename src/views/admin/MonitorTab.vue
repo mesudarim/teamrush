@@ -1,10 +1,20 @@
 <script setup>
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminStore } from '@/stores/admin'
+import { subscribeToPhotos } from '@/firebase/firestore'
 
 const { t } = useI18n()
 const admin = useAdminStore()
+
+const photos = ref([])
+const lightbox = ref(null)
+let photosUnsubscribe = null
+
+onMounted(() => {
+  photosUnsubscribe = subscribeToPhotos((list) => { photos.value = list })
+})
+onUnmounted(() => { photosUnsubscribe?.() })
 
 const trackMap = computed(() => {
   const map = {}
@@ -109,5 +119,64 @@ const formatTime = (team) => {
         </tbody>
       </table>
     </div>
+
+    <!-- Photos gallery -->
+    <div class="mt-10">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="section-title">📷 {{ t('admin.monitor.photos') }}</h2>
+        <span class="text-sm text-slate-400">{{ t('admin.monitor.photosCount', { n: photos.length }) }}</span>
+      </div>
+
+      <div v-if="photos.length === 0" class="card text-center text-slate-500 py-10">
+        {{ t('admin.monitor.photosEmpty') }}
+      </div>
+
+      <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
+        <div
+          v-for="photo in photos"
+          :key="photo.id"
+          class="group relative aspect-square rounded-xl overflow-hidden border border-slate-700 bg-slate-800 cursor-pointer hover:border-amber-500/50 transition-colors"
+          @click="lightbox = photo"
+        >
+          <img :src="photo.url" :alt="photo.teamPseudo" class="w-full h-full object-cover" loading="lazy" />
+          <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <p class="text-white text-xs font-bold truncate">{{ photo.teamPseudo }}</p>
+            <p class="text-slate-400 text-xs truncate">{{ photo.checkpointTitle }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lightbox -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="lightbox"
+          class="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 gap-4"
+          @click.self="lightbox = null"
+        >
+          <button @click="lightbox = null" class="absolute top-4 right-4 text-white text-2xl font-black leading-none bg-slate-700 w-10 h-10 rounded-full flex items-center justify-center hover:bg-slate-600">✕</button>
+          <img :src="lightbox.url" class="max-w-full max-h-[75vh] rounded-2xl object-contain shadow-2xl" />
+          <div class="text-center space-y-1">
+            <p class="text-white font-bold">{{ lightbox.teamPseudo }}</p>
+            <p class="text-slate-400 text-sm">{{ lightbox.checkpointTitle }}</p>
+          </div>
+          <a
+            :href="lightbox.url"
+            target="_blank"
+            download
+            class="btn-primary text-sm py-2 px-6"
+            @click.stop
+          >
+            ↓ {{ t('admin.monitor.download') }}
+          </a>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+</style>

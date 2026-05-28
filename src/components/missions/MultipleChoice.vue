@@ -3,87 +3,101 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseMission from './BaseMission.vue'
 
-const { t, locale } = useI18n()
+const { locale } = useI18n()
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
-  config: { type: Object, default: () => ({}) },
+  question:   { type: Object, required: true },
+  config:     { type: Object, default: () => ({}) },
 })
-const emit = defineEmits(['submit'])
+const emit = defineEmits(['correct', 'wrong'])
 
-const selected = ref(null)
-const submitted = ref(false)
-const isCorrect = ref(null)
+const wrongIndices = ref(new Set())
+const solved = ref(false)
 
-// choices: [{ text: string, textEn?: string, isCorrect: boolean }]
-const choices = computed(() => props.config.choices ?? [])
-const question = computed(() =>
-  locale.value === 'en' && props.config.questionEn
-    ? props.config.questionEn
-    : props.config.question ?? ''
+const choices = computed(() => props.question.choices ?? [])
+
+const questionText = computed(() =>
+  locale.value === 'en' && props.question.questionEn
+    ? props.question.questionEn
+    : props.question.question ?? ''
 )
 
 const choiceLabel = (choice) =>
   locale.value === 'en' && choice.textEn ? choice.textEn : choice.text
 
-const submit = () => {
-  if (selected.value === null || submitted.value) return
-  const correct = choices.value[selected.value]?.isCorrect === true
-  isCorrect.value = correct
-  submitted.value = true
-  emit('submit', correct, selected.value)
+const stateOf = (idx) => {
+  if (solved.value && choices.value[idx]?.isCorrect) return 'correct'
+  if (wrongIndices.value.has(idx)) return 'wrong'
+  return 'idle'
+}
+
+const handleChoice = (idx) => {
+  if (solved.value || wrongIndices.value.has(idx)) return
+  if (choices.value[idx]?.isCorrect) {
+    solved.value = true
+    emit('correct')
+  } else {
+    wrongIndices.value = new Set([...wrongIndices.value, idx])
+    emit('wrong')
+  }
 }
 </script>
 
 <template>
-  <BaseMission :checkpoint="checkpoint" :config="config" :submitted="submitted" :correct="isCorrect">
+  <BaseMission :checkpoint="checkpoint" :config="config">
     <div class="space-y-3">
-      <!-- Question -->
-      <div v-if="question" class="bg-slate-900/60 rounded-xl px-4 py-3 border border-slate-700 text-center">
-        <p class="text-white font-bold text-base leading-snug">{{ question }}</p>
+
+      <!-- Question text -->
+      <div v-if="questionText" class="bg-slate-900/60 rounded-xl px-4 py-3 border border-slate-700 text-center">
+        <p class="text-white font-bold text-base leading-snug">{{ questionText }}</p>
       </div>
-      <p v-else class="text-sm text-slate-400 text-center font-medium">{{ t('missions.multipleChoice.title') }}</p>
+
+      <!-- Choices -->
       <div class="space-y-2">
         <button
           v-for="(choice, idx) in choices"
           :key="idx"
-          @click="!submitted && (selected = idx)"
+          @click="handleChoice(idx)"
+          :disabled="solved || wrongIndices.has(idx)"
           :class="[
             'w-full text-start px-4 py-3 rounded-xl border-2 transition-all font-medium text-sm',
-            submitted && choice.isCorrect
-              ? 'border-green-500 bg-green-500/10 text-green-400'
-              : submitted && selected === idx && !choice.isCorrect
-                ? 'border-red-500 bg-red-500/10 text-red-400'
-                : selected === idx
-                  ? 'border-amber-500 bg-amber-500/10 text-amber-300'
-                  : 'border-slate-600 bg-slate-700 text-slate-300 hover:border-slate-500'
+            stateOf(idx) === 'correct'
+              ? 'border-green-500 bg-green-500/10 text-green-400 cursor-default'
+              : stateOf(idx) === 'wrong'
+                ? 'border-red-600 bg-red-500/10 text-red-400 cursor-not-allowed opacity-60'
+                : solved
+                  ? 'border-slate-700 bg-slate-800 text-slate-500 cursor-default'
+                  : 'border-slate-600 bg-slate-700 text-slate-300 hover:border-amber-500/50 hover:bg-amber-500/5 active:scale-[0.98]'
           ]"
         >
           <div class="flex items-center gap-3">
-            <div
-              :class="[
-                'w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold shrink-0',
-                selected === idx ? 'border-current bg-current text-slate-900' : 'border-slate-500'
-              ]"
-            >
-              {{ String.fromCharCode(65 + idx) }}
+            <div :class="[
+              'w-7 h-7 rounded-full border-2 flex items-center justify-center text-xs font-bold shrink-0',
+              stateOf(idx) === 'correct' ? 'border-green-500 bg-green-500 text-white' :
+              stateOf(idx) === 'wrong'   ? 'border-red-600 text-red-400' :
+              'border-slate-500 text-slate-400'
+            ]">
+              {{ stateOf(idx) === 'correct' ? '✓' : stateOf(idx) === 'wrong' ? '✕' : String.fromCharCode(65 + idx) }}
             </div>
             <span>{{ choiceLabel(choice) }}</span>
-            <!-- Show result icons after submit -->
-            <span v-if="submitted" class="ms-auto">
-              {{ choice.isCorrect ? '✅' : (selected === idx ? '❌' : '') }}
-            </span>
           </div>
         </button>
       </div>
 
-      <button
-        @click="submit"
-        :disabled="selected === null || submitted"
-        class="btn-primary w-full mt-2"
-      >
-        {{ t('missions.multipleChoice.submit') }}
-      </button>
+      <!-- Live penalty counter -->
+      <Transition name="feedback">
+        <div v-if="wrongIndices.size > 0 && !solved"
+             class="text-center text-red-400 text-xs font-semibold py-1">
+          {{ wrongIndices.size }} mauvaise{{ wrongIndices.size > 1 ? 's' : '' }} réponse{{ wrongIndices.size > 1 ? 's' : '' }}
+          · −{{ wrongIndices.size * (checkpoint.pointsWrong ?? 50) }} pts
+        </div>
+      </Transition>
     </div>
   </BaseMission>
 </template>
+
+<style scoped>
+.feedback-enter-active, .feedback-leave-active { transition: all 0.3s; }
+.feedback-enter-from, .feedback-leave-to { opacity: 0; transform: translateY(-4px); }
+</style>

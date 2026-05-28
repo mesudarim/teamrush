@@ -66,6 +66,66 @@ import {
 } from 'firebase/firestore'
 import { db } from './config'
 
+// ─── Participants ─────────────────────────────────────────────────────────────
+
+export const getParticipants = async () => {
+  const snap = await getDocs(query(collection(db, 'participants'), orderBy('createdAt', 'asc')))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+export const createParticipant = async (data) => {
+  const ref = await addDoc(collection(db, 'participants'), {
+    name: data.name?.trim() ?? '',
+    email: data.email?.trim().toLowerCase() ?? '',
+    phone: data.phone?.trim().replace(/[\s\-\.]/g, '') ?? '',
+    loggedIn: false,
+    teamId: null,
+    createdAt: serverTimestamp(),
+  })
+  return ref.id
+}
+
+export const bulkCreateParticipants = async (list) => {
+  const batch = writeBatch(db)
+  list.forEach((data) => {
+    const ref = doc(collection(db, 'participants'))
+    batch.set(ref, {
+      name: data.name?.trim() ?? '',
+      email: data.email?.trim().toLowerCase() ?? '',
+      phone: data.phone?.trim().replace(/[\s\-\.]/g, '') ?? '',
+      loggedIn: false,
+      teamId: null,
+      createdAt: serverTimestamp(),
+    })
+  })
+  await batch.commit()
+}
+
+export const updateParticipant = async (id, data) => {
+  await updateDoc(doc(db, 'participants', id), data)
+}
+
+export const deleteParticipant = async (id) => {
+  await deleteDoc(doc(db, 'participants', id))
+}
+
+export const subscribeToParticipants = (callback) =>
+  onSnapshot(query(collection(db, 'participants'), orderBy('createdAt', 'asc')), (snap) =>
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  )
+
+// Find a participant by name, email or phone (client-side filter — fine for <1000 people)
+export const findParticipantByIdentifier = async (query_) => {
+  const q = query_.trim().toLowerCase().replace(/[\s\-\.]/g, '')
+  const snap = await getDocs(collection(db, 'participants'))
+  const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+  return all.find((p) =>
+    p.name?.trim().toLowerCase() === query_.trim().toLowerCase() ||
+    p.email?.toLowerCase() === q ||
+    p.phone?.replace(/[\s\-\.]/g, '') === q
+  ) ?? null
+}
+
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
 export const createTeam = async (pseudo, trackId) => {
@@ -91,25 +151,30 @@ export const getTeam = async (pseudo) => {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
 
-export const updateTeamProgress = async (pseudo, checkpointId, { correct, pointsDelta, missionAnswer }) => {
+export const adjustPoints = async (pseudo, delta) => {
+  await updateDoc(doc(db, 'teams', pseudo), {
+    points: increment(delta),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export const updateTeamProgress = async (pseudo, checkpointId, { missionAnswer } = {}) => {
   const ref = doc(db, 'teams', pseudo)
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref)
     if (!snap.exists()) throw new Error('Team not found')
     const data = snap.data()
     const newIndex = data.currentCheckpointIndex + 1
-    const completedCheckpoints = [...data.completedCheckpoints, checkpointId]
+    const completedCheckpoints = [...(data.completedCheckpoints ?? []), checkpointId]
     const checkpointTimes = {
       ...data.checkpointTimes,
       [checkpointId]: {
         ...data.checkpointTimes?.[checkpointId],
         completedAt: serverTimestamp(),
-        correct,
         missionAnswer,
       },
     }
     tx.update(ref, {
-      points: increment(pointsDelta),
       currentCheckpointIndex: newIndex,
       completedCheckpoints,
       checkpointTimes,
@@ -209,6 +274,24 @@ export const deleteCheckpoint = async (checkpointId) => {
 export const subscribeToCheckpoints = (callback) =>
   onSnapshot(query(collection(db, 'checkpoints'), orderBy('createdAt', 'asc')), (snap) =>
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  )
+
+// ─── Photos ───────────────────────────────────────────────────────────────────
+
+export const savePhotoRecord = async (data) => {
+  await addDoc(collection(db, 'photos'), {
+    teamPseudo: data.teamPseudo,
+    checkpointId: data.checkpointId,
+    checkpointTitle: data.checkpointTitle ?? '',
+    url: data.url,
+    uploadedAt: serverTimestamp(),
+  })
+}
+
+export const subscribeToPhotos = (callback) =>
+  onSnapshot(
+    query(collection(db, 'photos'), orderBy('uploadedAt', 'desc')),
+    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   )
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

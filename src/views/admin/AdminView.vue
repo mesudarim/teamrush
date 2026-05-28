@@ -3,17 +3,25 @@ import { onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
+import { useAdminAuthStore } from '@/stores/adminAuth'
 import LanguageToggle from '@/components/ui/LanguageToggle.vue'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const admin = useAdminStore()
+const adminAuth = useAdminAuthStore()
+
+const logout = async () => {
+  await adminAuth.logout()
+  router.replace({ name: 'AdminLogin' })
+}
 
 onMounted(() => admin.init())
 onUnmounted(() => admin.cleanup())
 
 const tabs = [
+  { key: 'AdminParticipants', label: () => t('admin.tabs.participants'), icon: '👥', path: '/admin/participants' },
   { key: 'AdminTracks',      label: () => t('admin.tabs.tracks'),      icon: '🗺️',  path: '/admin/tracks' },
   { key: 'AdminCheckpoints', label: () => t('admin.tabs.checkpoints'), icon: '📍',  path: '/admin/checkpoints' },
   { key: 'AdminMonitor',     label: () => t('admin.tabs.monitor'),     icon: '📊',  path: '/admin/monitor' },
@@ -35,11 +43,24 @@ const isActive = (tab) => route.name === tab.key
             <span class="ms-2 text-xs text-slate-500">Admin</span>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-3">
           <LanguageToggle />
-          <RouterLink to="/" class="btn-ghost text-xs py-1.5 px-3 text-slate-400">
-            ← {{ t('common.back') }}
-          </RouterLink>
+          <!-- User profile -->
+          <div v-if="adminAuth.isAuthenticated" class="flex items-center gap-2">
+            <img
+              v-if="adminAuth.photoURL"
+              :src="adminAuth.photoURL"
+              :alt="adminAuth.displayName"
+              class="w-8 h-8 rounded-full ring-2 ring-slate-600"
+            />
+            <span class="text-sm text-slate-300 hidden sm:block">{{ adminAuth.displayName }}</span>
+          </div>
+          <button
+            @click="logout"
+            class="btn-ghost text-xs py-1.5 px-3 text-slate-400 hover:text-red-400"
+          >
+            {{ t('nav.logout') }}
+          </button>
         </div>
       </div>
     </header>

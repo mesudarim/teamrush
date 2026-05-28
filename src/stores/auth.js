@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { createTeam, getTeam } from '@/firebase/firestore'
+import { createTeam, getTeam, findParticipantByIdentifier, updateParticipant } from '@/firebase/firestore'
 
 export const useAuthStore = defineStore('auth', () => {
   const team = ref(null)
+  const participant = ref(null)
   const isLoading = ref(false)
   const error = ref(null)
 
@@ -11,21 +12,34 @@ export const useAuthStore = defineStore('auth', () => {
   const pseudo = computed(() => team.value?.pseudo ?? null)
   const trackId = computed(() => team.value?.trackId ?? null)
 
-  const login = async (pseudo, trackId) => {
+  const login = async (identifier, trackId) => {
     isLoading.value = true
     error.value = null
     try {
-      // Try to get existing team first (rejoin support)
-      let existing = await getTeam(pseudo)
+      // 1. Find participant in the pre-registered list
+      const found = await findParticipantByIdentifier(identifier)
+      if (!found) {
+        throw new Error('NOT_ON_LIST')
+      }
+
+      // 2. Use participant ID as the team pseudo for uniqueness
+      const teamPseudo = found.id
+      participant.value = found
+
+      // 3. Create or rejoin team
+      let existing = await getTeam(teamPseudo)
       if (existing) {
-        // Allow rejoin only if same track
-        if (existing.trackId !== trackId) throw new Error('PSEUDO_TAKEN')
         team.value = existing
       } else {
-        await createTeam(pseudo, trackId)
-        team.value = await getTeam(pseudo)
+        await createTeam(teamPseudo, trackId)
+        team.value = await getTeam(teamPseudo)
       }
-      sessionStorage.setItem('teamrush_pseudo', pseudo)
+
+      // 4. Mark participant as logged in
+      await updateParticipant(found.id, { loggedIn: true, teamId: teamPseudo, lastLoginAt: new Date() })
+
+      sessionStorage.setItem('teamrush_pseudo', teamPseudo)
+      sessionStorage.setItem('teamrush_participant', JSON.stringify(found))
       return true
     } catch (e) {
       error.value = e.message
@@ -37,14 +51,20 @@ export const useAuthStore = defineStore('auth', () => {
 
   const logout = () => {
     team.value = null
+    participant.value = null
     sessionStorage.removeItem('teamrush_pseudo')
+    sessionStorage.removeItem('teamrush_participant')
   }
 
   const restoreSession = async () => {
     const savedPseudo = sessionStorage.getItem('teamrush_pseudo')
+    const savedParticipant = sessionStorage.getItem('teamrush_participant')
     if (savedPseudo) {
       const data = await getTeam(savedPseudo)
-      if (data) team.value = data
+      if (data) {
+        team.value = data
+        if (savedParticipant) participant.value = JSON.parse(savedParticipant)
+      }
     }
   }
 
@@ -53,5 +73,5 @@ export const useAuthStore = defineStore('auth', () => {
     team.value = await getTeam(pseudo.value)
   }
 
-  return { team, isLoading, error, isLoggedIn, pseudo, trackId, login, logout, restoreSession, refreshTeam }
+  return { team, participant, isLoading, error, isLoggedIn, pseudo, trackId, login, logout, restoreSession, refreshTeam }
 })

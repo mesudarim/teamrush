@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getTrack, getCheckpoint, updateTeamProgress, startCheckpointTimer, markTeamFinished, subscribeToTeam } from '@/firebase/firestore'
+import { getTrack, getCheckpoint, updateTeamProgress, startCheckpointTimer, markTeamFinished, subscribeToTeam, adjustPoints } from '@/firebase/firestore'
 import { useAuthStore } from './auth'
 
 export const useGameStore = defineStore('game', () => {
@@ -12,16 +12,19 @@ export const useGameStore = defineStore('game', () => {
   const isLoading = ref(false)
   const error = ref(null)
 
-  // Game phase: 'envelope1' | 'stage1' | 'envelope2' | 'stage2' | 'result' | 'finished'
+  // Game phase: 'envelope1' | 'stage1' | 'bravo' | 'envelope2' | 'stage2' | 'result' | 'finished'
   const phase = ref('envelope1')
-  const stage1Result = ref(null)   // null | 'correct' | 'wrong'
-  const stage2Result = ref(null)   // null | 'correct' | 'wrong'
+  const stage2Result = ref(null)
   const lastPointsDelta = ref(0)
+  const checkpointDelta = ref(0)
+
+  // Multiple questions per checkpoint
+  const currentQuestionIndex = ref(0)
 
   // Elapsed time tracking
   const elapsedSeconds = ref(0)
   const timeBonus = ref(0)
-  const TIME_BASE_SECONDS = 3600 // 60 minutes
+  const TIME_BASE_SECONDS = 3600
   let timerInterval = null
   let teamUnsubscribe = null
 
@@ -32,6 +35,31 @@ export const useGameStore = defineStore('game', () => {
     checkpoints.value.length ? (currentIndex.value / checkpoints.value.length) * 100 : 0
   )
 
+  // Normalize questions from missionConfig (supports old single-question format)
+  const questions = computed(() => {
+    const cp = currentCheckpoint.value
+    const mc = cp?.missionConfig
+    const type = cp?.missionType ?? 'MultipleChoice'
+    if (!mc) return []
+    // Photo missions are always a single "question" — no choices or answer needed
+    if (type === 'PhotoCapture') {
+      return [{ type }]
+    }
+    if (Array.isArray(mc.questions) && mc.questions.length > 0) {
+      return mc.questions.map(q => ({ ...q, type }))
+    }
+    // backward compat: single question at root level
+    return [{
+      type,
+      question:   mc.question   ?? '',
+      questionEn: mc.questionEn ?? '',
+      choices:    mc.choices    ?? [],
+      answer:     mc.answer     ?? '',
+    }]
+  })
+
+  const currentQuestion = computed(() => questions.value[currentQuestionIndex.value] ?? null)
+
   const loadTrack = async () => {
     if (!authStore.trackId) return
     isLoading.value = true
@@ -39,14 +67,12 @@ export const useGameStore = defineStore('game', () => {
       track.value = await getTrack(authStore.trackId)
       if (!track.value) throw new Error('Track not found')
 
-      // Load all checkpoints for this track in order
       const cpIds = track.value.checkpointIds ?? []
       const loaded = await Promise.all(cpIds.map((id) => getCheckpoint(id)))
       checkpoints.value = loaded.filter(Boolean)
 
       await loadCurrentCheckpoint()
 
-      // Subscribe to team updates
       if (authStore.pseudo) {
         teamUnsubscribe?.()
         teamUnsubscribe = subscribeToTeam(authStore.pseudo, (data) => {
@@ -69,65 +95,65 @@ export const useGameStore = defineStore('game', () => {
       return
     }
     currentCheckpoint.value = checkpoints.value[idx]
-    // Reset phase state first so UI reacts immediately
-    stage1Result.value = null
-    stage2Result.value = null
-    lastPointsDelta.value = 0
     phase.value = 'envelope1'
+    currentQuestionIndex.value = 0
+    checkpointDelta.value = 0
+    lastPointsDelta.value = 0
+    stage2Result.value = null
 
-    // Non-blocking — timer is informational, must not block game flow
     if (currentCheckpoint.value?.id && authStore.pseudo) {
       startCheckpointTimer(authStore.pseudo, currentCheckpoint.value.id).catch(() => {})
     }
   }
 
-  const openEnvelope1 = () => {
-    phase.value = 'stage1'
-  }
+  const openEnvelope1 = () => { phase.value = 'stage1' }
 
   const validateStage1 = (input) => {
     const keyword = currentCheckpoint.value?.stage1Keyword ?? ''
     const correct = input.trim().toLowerCase() === keyword.trim().toLowerCase()
-    stage1Result.value = correct ? 'correct' : 'wrong'
     if (correct) {
-      // Small delay so the ✅ feedback is visible before transition
       setTimeout(() => { phase.value = 'bravo' }, 600)
     }
     return correct
   }
 
-  const advanceToBravo = () => {
-    phase.value = 'envelope2'
-  }
+  const advanceToBravo = () => { phase.value = 'envelope2' }
+  const openEnvelope2 = () => { phase.value = 'stage2' }
 
-  const openEnvelope2 = () => {
-    phase.value = 'stage2'
-  }
-
-  const submitMission = async (correct, answer) => {
-    if (!currentCheckpoint.value || !authStore.pseudo) return
+  // Called per question attempt (correct or wrong)
+  const answerQuestion = async (isCorrect) => {
     const cp = currentCheckpoint.value
-    const pointsDelta = correct ? (cp.pointsCorrect ?? 100) : -(cp.pointsWrong ?? 50)
-    lastPointsDelta.value = pointsDelta
-    stage2Result.value = correct ? 'correct' : 'wrong'
-
-    await updateTeamProgress(authStore.pseudo, cp.id, {
-      correct,
-      pointsDelta,
-      missionAnswer: answer,
-    })
+    if (!cp || !authStore.pseudo) return
+    const pts = isCorrect ? (cp.pointsCorrect ?? 100) : -(cp.pointsWrong ?? 50)
+    lastPointsDelta.value = pts
+    checkpointDelta.value += pts
+    await adjustPoints(authStore.pseudo, pts)
     await authStore.refreshTeam()
+  }
+
+  // Advance to next question
+  const advanceQuestion = () => {
+    currentQuestionIndex.value++
+  }
+
+  // All questions answered correctly — finalise checkpoint
+  const finishAllQuestions = async () => {
+    const cp = currentCheckpoint.value
+    if (!cp || !authStore.pseudo) return
+    await updateTeamProgress(authStore.pseudo, cp.id, { missionAnswer: 'completed' })
+    await authStore.refreshTeam()
+    currentQuestionIndex.value = 0
+    stage2Result.value = checkpointDelta.value >= 0 ? 'correct' : 'wrong'
     phase.value = 'result'
   }
 
   const advanceToNext = async () => {
     error.value = null
     try {
-      // Always refresh before advancing to get the latest index from Firestore
       await authStore.refreshTeam()
       const nextIndex = authStore.team?.currentCheckpointIndex ?? 0
       if (nextIndex >= checkpoints.value.length) {
-        clearInterval(timerInterval) // freeze timer before saving
+        clearInterval(timerInterval)
         const bonus = Math.max(0, Math.round((TIME_BASE_SECONDS - elapsedSeconds.value) / 6))
         timeBonus.value = bonus
         await markTeamFinished(authStore.pseudo, bonus)
@@ -164,9 +190,11 @@ export const useGameStore = defineStore('game', () => {
 
   return {
     track, checkpoints, currentCheckpoint, isLoading, error,
-    phase, stage1Result, stage2Result, lastPointsDelta,
+    phase, stage2Result, lastPointsDelta, checkpointDelta,
+    questions, currentQuestion, currentQuestionIndex,
     elapsedSeconds, timeBonus, currentIndex, totalPoints, isFinished, progress,
     loadTrack, loadCurrentCheckpoint, openEnvelope1, validateStage1,
-    advanceToBravo, openEnvelope2, submitMission, advanceToNext, cleanup, formatTime,
+    advanceToBravo, openEnvelope2, answerQuestion, advanceQuestion,
+    finishAllQuestions, advanceToNext, cleanup, formatTime,
   }
 })

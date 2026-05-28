@@ -18,6 +18,10 @@ const imagePreview = ref('')
 
 const form = ref(emptyForm())
 
+function emptyQuestion() {
+  return { question: '', questionEn: '', answer: '', choices: [{ text: '', textEn: '', isCorrect: false }] }
+}
+
 function emptyForm() {
   return {
     title: '', titleEn: '',
@@ -35,16 +39,14 @@ function emptyForm() {
     missionType: 'MultipleChoice',
     missionConfig: {
       instruction: '', instructionEn: '',
-      question: '', questionEn: '',
-      answer: '',
-      choices: [{ text: '', textEn: '', isCorrect: false }],
+      questions: [emptyQuestion()],
     },
     pointsCorrect: 100,
     pointsWrong: 50,
   }
 }
 
-const missionTypes = ['TextValidation', 'MultipleChoice']
+const missionTypes = ['TextValidation', 'MultipleChoice', 'PhotoCapture']
 
 const startCreate = () => {
   form.value = emptyForm()
@@ -55,14 +57,25 @@ const startCreate = () => {
 }
 
 const startEdit = (cp) => {
-  form.value = {
-    ...emptyForm(),
-    ...cp,
-    missionConfig: { ...emptyForm().missionConfig, ...(cp.missionConfig ?? {}) },
+  const base = emptyForm()
+  form.value = { ...base, ...cp, missionConfig: { ...base.missionConfig, ...(cp.missionConfig ?? {}) } }
+  // Backward compat: migrate old single-question format to questions array
+  const mc = form.value.missionConfig
+  const legacy = /** @type {any} */ (mc)
+  if (!Array.isArray(mc.questions) || mc.questions.length === 0) {
+    mc.questions = [{
+      question:   legacy.question   ?? '',
+      questionEn: legacy.questionEn ?? '',
+      answer:     legacy.answer     ?? '',
+      choices:    legacy.choices?.length ? legacy.choices : [{ text: '', textEn: '', isCorrect: false }],
+    }]
   }
-  if (!form.value.missionConfig.choices?.length) {
-    form.value.missionConfig.choices = [{ text: '', textEn: '', isCorrect: false }]
-  }
+  // Ensure every question has choices
+  mc.questions.forEach(q => {
+    if (!Array.isArray(q.choices) || q.choices.length === 0) {
+      q.choices = [{ text: '', textEn: '', isCorrect: false }]
+    }
+  })
   editingId.value = cp.id
   imageFile.value = null
   imagePreview.value = cp.mapImageUrl ?? ''
@@ -99,17 +112,23 @@ const deleteCheckpoint = async () => {
   confirmDeleteId.value = null
 }
 
-// Multiple choice helpers
-const addChoice = () => {
-  form.value.missionConfig.choices.push({ text: '', textEn: '', isCorrect: false })
+// Question helpers
+const addQuestion = () => {
+  form.value.missionConfig.questions.push(emptyQuestion())
+}
+const removeQuestion = (qIdx) => {
+  form.value.missionConfig.questions.splice(qIdx, 1)
 }
 
-const removeChoice = (idx) => {
-  form.value.missionConfig.choices.splice(idx, 1)
+// Choice helpers (per question)
+const addChoice = (qIdx) => {
+  form.value.missionConfig.questions[qIdx].choices.push({ text: '', textEn: '', isCorrect: false })
 }
-
-const setCorrect = (idx) => {
-  form.value.missionConfig.choices.forEach((c, i) => { c.isCorrect = i === idx })
+const removeChoice = (qIdx, cIdx) => {
+  form.value.missionConfig.questions[qIdx].choices.splice(cIdx, 1)
+}
+const setCorrect = (qIdx, cIdx) => {
+  form.value.missionConfig.questions[qIdx].choices.forEach((c, i) => { c.isCorrect = i === cIdx })
 }
 </script>
 
@@ -165,7 +184,7 @@ const setCorrect = (idx) => {
 
         <!-- Basic info -->
         <fieldset class="space-y-4">
-          <legend class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Basic Info</legend>
+          <legend class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">{{ t('admin.checkpoints.basicInfo') }}</legend>
           <div class="grid md:grid-cols-2 gap-4">
             <div>
               <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.titleField') }} *</label>
@@ -202,8 +221,8 @@ const setCorrect = (idx) => {
             >
               <div :class="['absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform', form.showMap ? 'translate-x-5' : 'translate-x-0']" />
             </div>
-            <span class="text-sm font-semibold text-slate-300">Afficher le bouton carte aux joueurs</span>
-            <span class="text-xs text-slate-500">(désactiver en intérieur / hôtel)</span>
+            <span class="text-sm font-semibold text-slate-300">{{ t('admin.checkpoints.showMap') }}</span>
+            <span class="text-xs text-slate-500">{{ t('admin.checkpoints.showMapHint') }}</span>
           </label>
 
           <template v-if="form.showMap">
@@ -239,19 +258,19 @@ const setCorrect = (idx) => {
 
         <!-- Envelope display -->
         <fieldset class="space-y-4">
-          <legend class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Envelopes — Texte affiché</legend>
-          <p class="text-xs text-slate-500 -mt-2">Ce que les joueurs voient sur l'enveloppe <strong>avant</strong> de l'ouvrir. Ne pas mettre la destination ici.</p>
+          <legend class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">{{ t('admin.checkpoints.envelopeSection') }}</legend>
+          <p class="text-xs text-slate-500 -mt-2">{{ t('admin.checkpoints.envelopeSectionHint') }}</p>
           <div class="grid md:grid-cols-3 gap-4">
             <div>
-              <label class="block text-sm font-semibold text-slate-300 mb-1">Marque (petite ligne)</label>
+              <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.envelopeBrand') }}</label>
               <input v-model="form.envelopeBrand" class="input-field text-center font-mono tracking-widest" placeholder="TeamRush" />
             </div>
             <div>
-              <label class="block text-sm font-semibold text-amber-400 mb-1">Enveloppe 1 — grand texte</label>
+              <label class="block text-sm font-semibold text-amber-400 mb-1">{{ t('admin.checkpoints.envelope1Label') }}</label>
               <input v-model="form.envelope1Label" class="input-field text-center font-black text-lg" placeholder="יעד" />
             </div>
             <div>
-              <label class="block text-sm font-semibold text-amber-400 mb-1">Enveloppe 2 — grand texte</label>
+              <label class="block text-sm font-semibold text-amber-400 mb-1">{{ t('admin.checkpoints.envelope2Label') }}</label>
               <input v-model="form.envelope2Label" class="input-field text-center font-black text-lg" placeholder="משימה" />
             </div>
           </div>
@@ -282,7 +301,7 @@ const setCorrect = (idx) => {
 
           <!-- Stage 1 Mode -->
           <div>
-            <label class="block text-sm font-semibold text-slate-300 mb-2">Player validation method</label>
+            <label class="block text-sm font-semibold text-slate-300 mb-2">{{ t('admin.checkpoints.stage1Mode') }}</label>
             <div class="flex gap-3">
               <button
                 v-for="mode in ['text', 'qr']"
@@ -294,7 +313,7 @@ const setCorrect = (idx) => {
               </button>
             </div>
             <p class="text-xs text-slate-500 mt-1">
-              {{ form.stage1Mode === 'qr' ? 'Player scans a QR code. Print the code below and place it at the location.' : 'Player types the keyword manually.' }}
+              {{ form.stage1Mode === 'qr' ? t('admin.checkpoints.stage1ModeQrHint') : t('admin.checkpoints.stage1ModeTextHint') }}
             </p>
           </div>
 
@@ -308,7 +327,7 @@ const setCorrect = (idx) => {
 
         <!-- Stage 2 mission -->
         <fieldset class="space-y-4">
-          <legend class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Stage 2 — Mission</legend>
+          <legend class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">{{ t('admin.checkpoints.stage2Section') }}</legend>
 
           <!-- Mission type selector -->
           <div>
@@ -325,76 +344,96 @@ const setCorrect = (idx) => {
             </div>
           </div>
 
-          <!-- Instructions -->
+          <!-- Instruction shown in envelope 2 -->
           <div class="grid md:grid-cols-2 gap-4">
             <div>
               <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.missionInstruction') }}</label>
-              <textarea v-model="form.missionConfig.instruction" rows="3" class="input-field resize-none" />
+              <textarea v-model="form.missionConfig.instruction" rows="2" class="input-field resize-none" />
             </div>
             <div>
               <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.missionInstructionEn') }}</label>
-              <textarea v-model="form.missionConfig.instructionEn" rows="3" class="input-field resize-none" />
+              <textarea v-model="form.missionConfig.instructionEn" rows="2" class="input-field resize-none" />
             </div>
           </div>
 
-          <!-- TextValidation question + answer -->
-          <template v-if="form.missionType === 'TextValidation'">
-            <div class="grid md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-semibold text-slate-300 mb-1">Question <span class="text-amber-400">*</span></label>
-                <textarea v-model="form.missionConfig.question" rows="2" class="input-field resize-none" placeholder="Décrivez le lieu ou posez une question ouverte..." />
-              </div>
-              <div>
-                <label class="block text-sm font-semibold text-slate-300 mb-1">Question (English)</label>
-                <textarea v-model="form.missionConfig.questionEn" rows="2" class="input-field resize-none" placeholder="Describe the place or ask an open question..." />
-              </div>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-300 mb-1">Correct Answer</label>
-              <input v-model="form.missionConfig.answer" class="input-field font-mono" placeholder="exact answer (case-insensitive)" />
-            </div>
-          </template>
-
-          <!-- MultipleChoice question -->
-          <div v-if="form.missionType === 'MultipleChoice'" class="grid md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-semibold text-slate-300 mb-1">Question <span class="text-amber-400">*</span></label>
-              <textarea v-model="form.missionConfig.question" rows="2" class="input-field resize-none" placeholder="Quelle est la hauteur de la Tour Eiffel ?" />
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-300 mb-1">Question (English)</label>
-              <textarea v-model="form.missionConfig.questionEn" rows="2" class="input-field resize-none" placeholder="What is the height of the Eiffel Tower?" />
-            </div>
+          <!-- Photo mission note -->
+          <div v-if="form.missionType === 'PhotoCapture'"
+               class="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-amber-300 text-sm space-y-1">
+            <p class="font-bold">📷 {{ t('admin.missions.photoMissionNote') }}</p>
+            <p class="text-amber-400/80">{{ t('admin.missions.photoMissionNoteBody') }}</p>
           </div>
 
-          <!-- MultipleChoice choices -->
-          <div v-if="form.missionType === 'MultipleChoice'" class="space-y-3">
+          <!-- Questions list (not shown for PhotoCapture) -->
+          <div v-if="form.missionType !== 'PhotoCapture'" class="space-y-4">
             <div
-              v-for="(choice, idx) in form.missionConfig.choices"
-              :key="idx"
-              class="flex items-start gap-3 bg-slate-900/50 rounded-xl p-3 border border-slate-700"
+              v-for="(q, qIdx) in form.missionConfig.questions"
+              :key="qIdx"
+              class="rounded-2xl border border-slate-600 bg-slate-900/40 p-4 space-y-3"
             >
-              <div class="flex flex-col gap-1">
+              <!-- Question header -->
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-black text-amber-400 uppercase tracking-widest">
+                  Question {{ qIdx + 1 }}
+                </span>
                 <button
-                  @click="setCorrect(idx)"
-                  :class="['w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors', choice.isCorrect ? 'bg-green-500 border-green-500 text-white' : 'border-slate-500']"
-                  title="Mark as correct"
+                  v-if="form.missionConfig.questions.length > 1"
+                  @click="removeQuestion(qIdx)"
+                  class="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded"
                 >
-                  <svg v-if="choice.isCorrect" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                  {{ t('admin.checkpoints.removeQuestion') }}
                 </button>
-                <span class="text-xs text-slate-500 text-center">{{ String.fromCharCode(65 + idx) }}</span>
               </div>
-              <div class="flex-1 grid sm:grid-cols-2 gap-2">
-                <input v-model="choice.text" class="input-field text-sm py-2" placeholder="Hebrew text" />
-                <input v-model="choice.textEn" class="input-field text-sm py-2" placeholder="English text" />
+
+              <!-- Question text -->
+              <div class="grid md:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.questionLabel') }} *</label>
+                  <textarea v-model="q.question" rows="2" class="input-field resize-none text-sm" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.questionEnLabel') }}</label>
+                  <textarea v-model="q.questionEn" rows="2" class="input-field resize-none text-sm" />
+                </div>
               </div>
-              <button @click="removeChoice(idx)" class="text-red-400 hover:text-red-300 mt-1">✕</button>
+
+              <!-- TextValidation: answer -->
+              <div v-if="form.missionType === 'TextValidation'">
+                <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.correctAnswer') }}</label>
+                <input v-model="q.answer" class="input-field font-mono text-sm" />
+              </div>
+
+              <!-- MultipleChoice: choices -->
+              <div v-if="form.missionType === 'MultipleChoice'" class="space-y-2">
+                <div
+                  v-for="(choice, cIdx) in q.choices"
+                  :key="cIdx"
+                  class="flex items-center gap-2 bg-slate-800 rounded-xl p-2 border border-slate-700"
+                >
+                  <button
+                    @click="setCorrect(qIdx, cIdx)"
+                    :class="['w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors', choice.isCorrect ? 'bg-green-500 border-green-500 text-white' : 'border-slate-500']"
+                    title="Mark as correct"
+                  >
+                    <svg v-if="choice.isCorrect" class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                  </button>
+                  <span class="text-xs text-slate-500 w-4 text-center">{{ String.fromCharCode(65 + cIdx) }}</span>
+                  <input v-model="choice.text" class="input-field text-sm py-1.5 flex-1" placeholder="Texte" />
+                  <input v-model="choice.textEn" class="input-field text-sm py-1.5 flex-1" placeholder="English" />
+                  <button @click="removeChoice(qIdx, cIdx)" class="text-red-400 hover:text-red-300 text-sm px-1">✕</button>
+                </div>
+                <button @click="addChoice(qIdx)" class="btn-secondary text-xs py-1.5 px-3">{{ t('admin.checkpoints.addChoice') }}</button>
+              </div>
             </div>
-            <button @click="addChoice" class="btn-secondary text-sm py-2">+ Add Choice</button>
+
+            <!-- Add question button -->
+            <button @click="addQuestion" class="btn-secondary w-full text-sm py-2.5 border-dashed">
+              {{ t('admin.checkpoints.addQuestion') }}
+            </button>
           </div>
         </fieldset>
 
         <!-- Points -->
+
         <fieldset>
           <legend class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Points</legend>
           <div class="grid grid-cols-2 gap-4">
@@ -402,7 +441,7 @@ const setCorrect = (idx) => {
               <label class="block text-sm font-semibold text-green-400 mb-1">{{ t('admin.checkpoints.pointsCorrect') }}</label>
               <input v-model="form.pointsCorrect" type="number" min="0" class="input-field text-green-400 font-bold" />
             </div>
-            <div>
+            <div v-if="form.missionType !== 'PhotoCapture'">
               <label class="block text-sm font-semibold text-red-400 mb-1">{{ t('admin.checkpoints.pointsWrong') }}</label>
               <input v-model="form.pointsWrong" type="number" min="0" class="input-field text-red-400 font-bold" />
             </div>

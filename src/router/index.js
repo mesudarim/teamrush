@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useAdminAuthStore } from '@/stores/adminAuth'
 
 const routes = [
   // ─── Player routes ──────────────────────────────────────────────────────────
@@ -29,35 +30,22 @@ const routes = [
 
   // ─── Admin routes ───────────────────────────────────────────────────────────
   {
+    path: '/admin/login',
+    name: 'AdminLogin',
+    component: () => import('@/views/admin/AdminLoginView.vue'),
+  },
+  {
     path: '/admin',
     name: 'Admin',
     component: () => import('@/views/admin/AdminView.vue'),
     meta: { admin: true },
     children: [
-      {
-        path: '',
-        redirect: '/admin/tracks',
-      },
-      {
-        path: 'tracks',
-        name: 'AdminTracks',
-        component: () => import('@/views/admin/TracksTab.vue'),
-      },
-      {
-        path: 'checkpoints',
-        name: 'AdminCheckpoints',
-        component: () => import('@/views/admin/CheckpointsTab.vue'),
-      },
-      {
-        path: 'monitor',
-        name: 'AdminMonitor',
-        component: () => import('@/views/admin/MonitorTab.vue'),
-      },
-      {
-        path: 'settings',
-        name: 'AdminSettings',
-        component: () => import('@/views/admin/SettingsTab.vue'),
-      },
+      { path: '', redirect: '/admin/tracks' },
+      { path: 'participants', name: 'AdminParticipants', component: () => import('@/views/admin/ParticipantsTab.vue') },
+      { path: 'tracks',       name: 'AdminTracks',       component: () => import('@/views/admin/TracksTab.vue') },
+      { path: 'checkpoints',  name: 'AdminCheckpoints',  component: () => import('@/views/admin/CheckpointsTab.vue') },
+      { path: 'monitor',      name: 'AdminMonitor',      component: () => import('@/views/admin/MonitorTab.vue') },
+      { path: 'settings',     name: 'AdminSettings',     component: () => import('@/views/admin/SettingsTab.vue') },
     ],
   },
 ]
@@ -69,28 +57,19 @@ export const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
+  // Restore player session on first navigation
   const auth = useAuthStore()
-
-  // Restore session on first navigation
   if (!auth.isLoggedIn) {
     await auth.restoreSession()
   }
 
-  if (to.meta.requiresAuth && !auth.isLoggedIn) {
-    return { name: 'Login' }
-  }
+  if (to.meta.requiresAuth && !auth.isLoggedIn) return { name: 'Login' }
+  if (to.meta.guest && auth.isLoggedIn) return { name: 'Game' }
 
-  if (to.meta.guest && auth.isLoggedIn) {
-    return { name: 'Game' }
-  }
-
-  // Admin: simple localStorage password guard
+  // Admin: require Google authentication
   if (to.meta.admin) {
-    const adminKey = localStorage.getItem('teamrush_admin')
-    if (adminKey !== 'teamrush_admin_2024') {
-      const key = prompt('Admin password:')
-      if (key !== 'teamrush_admin_2024') return { name: 'Login' }
-      localStorage.setItem('teamrush_admin', key)
-    }
+    const adminAuth = useAdminAuthStore()
+    await adminAuth.init()
+    if (!adminAuth.isAuthenticated) return { name: 'AdminLogin' }
   }
 })

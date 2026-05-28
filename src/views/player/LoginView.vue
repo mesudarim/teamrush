@@ -11,7 +11,7 @@ const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 
-const pseudo = ref('')
+const identifier = ref('')
 const selectedTrack = ref('')
 const tracks = ref([])
 const tracksLoading = ref(true)
@@ -28,14 +28,14 @@ onMounted(async () => {
 
 const submit = async () => {
   formError.value = ''
-  if (!pseudo.value.trim()) { formError.value = t('login.errors.emptyPseudo'); return }
+  if (!identifier.value.trim()) { formError.value = t('login.errors.emptyIdentifier'); return }
   if (!selectedTrack.value) { formError.value = t('login.errors.emptyTrack'); return }
 
-  const ok = await auth.login(pseudo.value.trim(), selectedTrack.value)
+  const ok = await auth.login(identifier.value.trim(), selectedTrack.value)
   if (ok) {
     router.push({ name: 'Intro' })
-  } else if (auth.error === 'PSEUDO_TAKEN') {
-    formError.value = t('login.pseudoTaken')
+  } else if (auth.error === 'NOT_ON_LIST') {
+    formError.value = t('login.notOnList')
   } else {
     formError.value = auth.error
   }
@@ -55,7 +55,6 @@ const submit = async () => {
 
     <!-- Hero -->
     <div class="flex-1 flex flex-col items-center justify-center px-4 py-8">
-      <!-- Animated logo area -->
       <div class="mb-8 text-center animate-fade-in">
         <div class="w-24 h-24 mx-auto mb-4 rounded-3xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-2xl shadow-amber-500/30">
           <span class="text-4xl font-black text-slate-900">TR</span>
@@ -67,16 +66,18 @@ const submit = async () => {
       <!-- Login card -->
       <div class="w-full max-w-sm animate-slide-up">
         <div class="card-glow space-y-5">
-          <!-- Pseudo -->
+
+          <!-- Identifier input -->
           <div>
-            <label class="block text-sm font-semibold text-slate-300 mb-2">{{ t('login.pseudoLabel') }}</label>
+            <label class="block text-sm font-semibold text-slate-300 mb-2">{{ t('login.identifierLabel') }}</label>
             <input
-              v-model="pseudo"
+              v-model="identifier"
               type="text"
               class="input-field text-lg font-semibold"
-              :placeholder="t('login.pseudoPlaceholder')"
+              :placeholder="t('login.identifierPlaceholder')"
               @keyup.enter="submit"
-              maxlength="30"
+              maxlength="80"
+              autocomplete="name"
             />
           </div>
 
@@ -128,7 +129,9 @@ const submit = async () => {
             :disabled="auth.isLoading || tracks.length === 0"
             class="btn-primary w-full text-base py-4"
           >
-            <span v-if="auth.isLoading">{{ t('login.loading') }}</span>
+            <span v-if="auth.isLoading" class="flex items-center justify-center gap-2">
+              <LoadingSpinner size="sm" /> {{ t('login.loading') }}
+            </span>
             <span v-else class="flex items-center justify-center gap-2">
               {{ t('login.submit') }}
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -140,9 +143,7 @@ const submit = async () => {
 
         <!-- Admin link -->
         <div class="text-center mt-4">
-          <RouterLink to="/admin" class="text-xs text-slate-600 hover:text-slate-400 transition-colors">
-            Admin
-          </RouterLink>
+          <RouterLink to="/admin" class="text-xs text-slate-600 hover:text-slate-400 transition-colors">Admin</RouterLink>
         </div>
       </div>
     </div>

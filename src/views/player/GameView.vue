@@ -25,16 +25,24 @@ onUnmounted(() => game.cleanup())
   <div class="min-h-screen bg-slate-900 flex flex-col">
     <PlayerNav />
 
-    <!-- Timer + progress bar -->
+    <!-- Timer + points + progress bar -->
     <div v-if="!game.isLoading && game.checkpoints.length" class="bg-slate-900 border-b border-slate-800">
       <div class="max-w-lg mx-auto px-4 pt-3 pb-2">
 
-        <!-- Timer — large and centered -->
-        <div class="text-center mb-2">
-          <div class="tabular-nums font-black text-white leading-none" style="font-size: clamp(2.4rem, 10vw, 3.5rem); letter-spacing: 0.04em;">
-            {{ game.formatTime(game.elapsedSeconds) }}
+        <!-- Timer + Points row -->
+        <div class="flex items-end justify-between mb-2">
+          <!-- Timer — large and centered -->
+          <div class="flex-1 text-center">
+            <div class="tabular-nums font-black text-white leading-none" style="font-size: clamp(2.4rem, 10vw, 3.5rem); letter-spacing: 0.04em;">
+              {{ game.formatTime(game.elapsedSeconds) }}
+            </div>
+            <div class="text-xs text-slate-500 mt-0.5 tracking-wider uppercase">⏱ {{ t('game.timer') }}</div>
           </div>
-          <div class="text-xs text-slate-500 mt-0.5 tracking-wider uppercase">⏱ {{ t('game.timer') }}</div>
+          <!-- Points — right side -->
+          <div class="text-end min-w-[70px]">
+            <div class="text-2xl font-black text-amber-400 tabular-nums leading-none">{{ game.totalPoints }}</div>
+            <div class="text-xs text-slate-500 mt-0.5 tracking-wider uppercase">⭐ {{ t('game.points') }}</div>
+          </div>
         </div>
 
         <!-- Checkpoint label + progress bar -->
