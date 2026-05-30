@@ -5,6 +5,7 @@ import { useAdminStore } from '@/stores/admin'
 import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 import MapPicker from '@/components/ui/MapPicker.vue'
 import QrCodeDisplay from '@/components/ui/QrCodeDisplay.vue'
+import PuzzleCropper from '@/components/ui/PuzzleCropper.vue'
 
 const { t } = useI18n()
 const admin = useAdminStore()
@@ -15,6 +16,9 @@ const confirmDeleteId = ref(null)
 const saving = ref(false)
 const imageFile = ref(null)
 const imagePreview = ref('')
+const puzzleImageBlob = ref(null)
+const puzzleRawSrc = ref('')    // full-res data URL for the cropper
+const showCropper = ref(false)
 
 const form = ref(emptyForm())
 
@@ -40,19 +44,49 @@ function emptyForm() {
     missionConfig: {
       instruction: '', instructionEn: '',
       questions: [emptyQuestion()],
+      puzzleImageUrl: '',
     },
     pointsCorrect: 100,
     pointsWrong: 50,
   }
 }
 
-const missionTypes = ['TextValidation', 'MultipleChoice', 'PhotoCapture']
+const missionTypes = ['TextValidation', 'MultipleChoice', 'PhotoCapture', 'CompassMission', 'PuzzleMission']
+
+// ─── Puzzle image ────────────────────────────────────────────────────────────
+
+const onPuzzleFilePick = (e) => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  e.target.value = ''
+  const reader = new FileReader()
+  reader.onload = (ev) => {
+    puzzleRawSrc.value = ev.target.result
+    showCropper.value = true
+  }
+  reader.readAsDataURL(file)
+}
+
+const onCropConfirm = (blob) => {
+  puzzleImageBlob.value = blob
+  // Show preview
+  form.value.missionConfig.puzzleImageUrl = URL.createObjectURL(blob)
+  showCropper.value = false
+}
+
+const clearPuzzleImage = () => {
+  puzzleImageBlob.value = null
+  puzzleRawSrc.value = ''
+  form.value.missionConfig.puzzleImageUrl = ''
+}
 
 const startCreate = () => {
   form.value = emptyForm()
   editingId.value = null
   imageFile.value = null
   imagePreview.value = ''
+  puzzleImageBlob.value = null
+  puzzleRawSrc.value = ''
   showForm.value = true
 }
 
@@ -79,6 +113,8 @@ const startEdit = (cp) => {
   editingId.value = cp.id
   imageFile.value = null
   imagePreview.value = cp.mapImageUrl ?? ''
+  puzzleImageBlob.value = null
+  puzzleRawSrc.value = ''
   showForm.value = true
 }
 
@@ -99,7 +135,7 @@ const saveCheckpoint = async () => {
       payload.mapLng = Number(payload.mapLng)
       payload.mapZoom = Number(payload.mapZoom)
     }
-    await admin.saveCheckpoint(payload, imageFile.value, editingId.value)
+    await admin.saveCheckpoint(payload, imageFile.value, editingId.value, puzzleImageBlob.value)
     cancelForm()
   } finally {
     saving.value = false
@@ -356,6 +392,40 @@ const setCorrect = (qIdx, cIdx) => {
             </div>
           </div>
 
+          <!-- Compass mission note -->
+          <div v-if="form.missionType === 'CompassMission'"
+               class="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-amber-300 text-sm space-y-1">
+            <p class="font-bold">🧭 {{ t('admin.missions.CompassMission') }}</p>
+            <p class="text-amber-400/80">{{ t('admin.missions.compassNoteBody') }}</p>
+          </div>
+
+          <!-- Puzzle mission UI -->
+          <div v-if="form.missionType === 'PuzzleMission'" class="space-y-3">
+            <div class="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-amber-300 text-sm space-y-1">
+              <p class="font-bold">🧩 {{ t('admin.missions.PuzzleMission') }}</p>
+              <p class="text-amber-400/80">{{ t('admin.missions.puzzleNoteBody') }}</p>
+            </div>
+            <!-- Image upload + preview -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-2">{{ t('admin.checkpoints.puzzleImage') }}</label>
+              <div v-if="form.missionConfig.puzzleImageUrl" class="flex items-start gap-3">
+                <img :src="form.missionConfig.puzzleImageUrl" class="w-24 h-24 rounded-xl object-cover border border-amber-500/40" />
+                <div class="flex flex-col gap-2">
+                  <label class="btn-secondary text-xs py-1.5 px-3 cursor-pointer">
+                    {{ t('admin.checkpoints.puzzleChangeBtn') }}
+                    <input type="file" accept="image/*" class="hidden" @change="onPuzzleFilePick" />
+                  </label>
+                  <button @click="clearPuzzleImage" class="btn-danger text-xs py-1.5 px-3">✕</button>
+                </div>
+              </div>
+              <label v-else class="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-slate-600 bg-slate-800/50 hover:border-amber-500/50 transition-colors cursor-pointer w-full">
+                <span class="text-2xl">🧩</span>
+                <span class="text-sm font-semibold text-slate-300">{{ t('admin.checkpoints.puzzleCropBtn') }}</span>
+                <input type="file" accept="image/*" class="hidden" @change="onPuzzleFilePick" />
+              </label>
+            </div>
+          </div>
+
           <!-- Photo mission note -->
           <div v-if="form.missionType === 'PhotoCapture'"
                class="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-amber-300 text-sm space-y-1">
@@ -363,8 +433,8 @@ const setCorrect = (qIdx, cIdx) => {
             <p class="text-amber-400/80">{{ t('admin.missions.photoMissionNoteBody') }}</p>
           </div>
 
-          <!-- Questions list (not shown for PhotoCapture) -->
-          <div v-if="form.missionType !== 'PhotoCapture'" class="space-y-4">
+          <!-- Questions list (not shown for self-contained mission types) -->
+          <div v-if="!['PhotoCapture', 'PuzzleMission'].includes(form.missionType)" class="space-y-4">
             <div
               v-for="(q, qIdx) in form.missionConfig.questions"
               :key="qIdx"
@@ -397,9 +467,10 @@ const setCorrect = (qIdx, cIdx) => {
               </div>
 
               <!-- TextValidation: answer -->
-              <div v-if="form.missionType === 'TextValidation'">
+              <div v-if="form.missionType === 'TextValidation' || form.missionType === 'CompassMission'">
                 <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.correctAnswer') }}</label>
-                <input v-model="q.answer" class="input-field font-mono text-sm" />
+                <input v-model="q.answer" class="input-field font-mono text-sm"
+                  :placeholder="form.missionType === 'CompassMission' ? t('admin.checkpoints.compassAnswerHint') : ''" />
               </div>
 
               <!-- MultipleChoice: choices -->
@@ -426,7 +497,11 @@ const setCorrect = (qIdx, cIdx) => {
             </div>
 
             <!-- Add question button -->
-            <button @click="addQuestion" class="btn-secondary w-full text-sm py-2.5 border-dashed">
+            <button
+              v-if="!['CompassMission'].includes(form.missionType)"
+              @click="addQuestion"
+              class="btn-secondary w-full text-sm py-2.5 border-dashed"
+            >
               {{ t('admin.checkpoints.addQuestion') }}
             </button>
           </div>
@@ -441,7 +516,7 @@ const setCorrect = (qIdx, cIdx) => {
               <label class="block text-sm font-semibold text-green-400 mb-1">{{ t('admin.checkpoints.pointsCorrect') }}</label>
               <input v-model="form.pointsCorrect" type="number" min="0" class="input-field text-green-400 font-bold" />
             </div>
-            <div v-if="form.missionType !== 'PhotoCapture'">
+            <div v-if="!['PhotoCapture', 'PuzzleMission'].includes(form.missionType)">
               <label class="block text-sm font-semibold text-red-400 mb-1">{{ t('admin.checkpoints.pointsWrong') }}</label>
               <input v-model="form.pointsWrong" type="number" min="0" class="input-field text-red-400 font-bold" />
             </div>
@@ -457,6 +532,13 @@ const setCorrect = (qIdx, cIdx) => {
         </div>
       </div>
     </Transition>
+
+    <PuzzleCropper
+      v-if="showCropper && puzzleRawSrc"
+      :src="puzzleRawSrc"
+      @confirm="onCropConfirm"
+      @cancel="showCropper = false"
+    />
 
     <ConfirmModal
       :is-open="!!confirmDeleteId"

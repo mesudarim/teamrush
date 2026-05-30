@@ -6,9 +6,11 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
 const game = useGameStore()
 
 const missionRegistry = {
-  TextValidation: defineAsyncComponent(() => import('@/components/missions/TextValidation.vue')),
-  MultipleChoice: defineAsyncComponent(() => import('@/components/missions/MultipleChoice.vue')),
-  PhotoCapture:   defineAsyncComponent(() => import('@/components/missions/PhotoCapture.vue')),
+  TextValidation:  defineAsyncComponent(() => import('@/components/missions/TextValidation.vue')),
+  MultipleChoice:  defineAsyncComponent(() => import('@/components/missions/MultipleChoice.vue')),
+  PhotoCapture:    defineAsyncComponent(() => import('@/components/missions/PhotoCapture.vue')),
+  CompassMission:  defineAsyncComponent(() => import('@/components/missions/CompassMission.vue')),
+  PuzzleMission:   defineAsyncComponent(() => import('@/components/missions/PuzzleMission.vue')),
 }
 
 const currentQuestion = computed(() => game.currentQuestion)

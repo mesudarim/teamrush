@@ -41,8 +41,8 @@ export const useGameStore = defineStore('game', () => {
     const mc = cp?.missionConfig
     const type = cp?.missionType ?? 'MultipleChoice'
     if (!mc) return []
-    // Photo missions are always a single "question" — no choices or answer needed
-    if (type === 'PhotoCapture') {
+    // These mission types are self-contained — no question array needed
+    if (type === 'PhotoCapture' || type === 'PuzzleMission') {
       return [{ type }]
     }
     if (Array.isArray(mc.questions) && mc.questions.length > 0) {

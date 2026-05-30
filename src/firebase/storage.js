@@ -17,3 +17,9 @@ export const uploadPhoto = async (blob, checkpointId, pseudo) => {
   const snap = await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
   return getDownloadURL(snap.ref)
 }
+
+export const uploadPuzzleImage = async (blob, checkpointId) => {
+  const storageRef = ref(storage, `puzzles/${checkpointId}/${Date.now()}.jpg`)
+  const snap = await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
+  return getDownloadURL(snap.ref)
+}

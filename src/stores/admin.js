@@ -6,7 +6,7 @@ import {
   createTrack, updateTrack, deleteTrack,
   getSettings, updateSettings,
 } from '@/firebase/firestore'
-import { uploadMapImage } from '@/firebase/storage'
+import { uploadMapImage, uploadPuzzleImage } from '@/firebase/storage'
 
 export const useAdminStore = defineStore('admin', () => {
   const checkpoints = ref([])
@@ -30,15 +30,19 @@ export const useAdminStore = defineStore('admin', () => {
 
   // ─── Checkpoints ────────────────────────────────────────────────────────────
 
-  const saveCheckpoint = async (data, imageFile, existingId = null) => {
+  const saveCheckpoint = async (data, imageFile, existingId = null, puzzleImageBlob = null) => {
     isLoading.value = true
     try {
+      const tempId = existingId ?? 'new_' + Date.now()
       let mapImageUrl = data.mapImageUrl ?? ''
       if (imageFile) {
-        const tempId = existingId ?? 'new_' + Date.now()
         mapImageUrl = await uploadMapImage(imageFile, tempId)
       }
-      const payload = { ...data, mapImageUrl }
+      let missionConfig = { ...(data.missionConfig ?? {}) }
+      if (puzzleImageBlob) {
+        missionConfig.puzzleImageUrl = await uploadPuzzleImage(puzzleImageBlob, tempId)
+      }
+      const payload = { ...data, mapImageUrl, missionConfig }
       if (existingId) {
         await updateCheckpoint(existingId, payload)
         return existingId
