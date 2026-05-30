@@ -6,6 +6,8 @@ import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 import MapPicker from '@/components/ui/MapPicker.vue'
 import QrCodeDisplay from '@/components/ui/QrCodeDisplay.vue'
 import PuzzleCropper from '@/components/ui/PuzzleCropper.vue'
+import ImageEditor from '@/components/ui/ImageEditor.vue'
+import { uploadMissingWordImage } from '@/firebase/storage'
 
 const { t } = useI18n()
 const admin = useAdminStore()
@@ -51,7 +53,7 @@ function emptyForm() {
   }
 }
 
-const missionTypes = ['TextValidation', 'MultipleChoice', 'PhotoCapture', 'CompassMission', 'PuzzleMission', 'AudioRecorder']
+const missionTypes = ['TextValidation', 'MultipleChoice', 'MissingWord', 'PhotoCapture', 'CompassMission', 'PuzzleMission', 'AudioRecorder']
 
 // ─── Puzzle image ────────────────────────────────────────────────────────────
 
@@ -78,6 +80,39 @@ const clearPuzzleImage = () => {
   puzzleImageBlob.value = null
   puzzleRawSrc.value = ''
   form.value.missionConfig.puzzleImageUrl = ''
+}
+
+// ─── MissingWord image editor ────────────────────────────────────────────────
+
+const showImageEditor    = ref(false)
+const imageEditorSrc     = ref('')
+const imageEditorQIdx    = ref(null)
+const missingWordUploading = ref(null)  // which qIdx is currently uploading
+
+const onMissingWordFilePick = (e, qIdx) => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  e.target.value = ''
+  const reader = new FileReader()
+  reader.onload = (ev) => {
+    imageEditorSrc.value = ev.target.result
+    imageEditorQIdx.value = qIdx
+    showImageEditor.value = true
+  }
+  reader.readAsDataURL(file)
+}
+
+const onImageEditorConfirm = async (blob) => {
+  showImageEditor.value = false
+  const qIdx = imageEditorQIdx.value
+  missingWordUploading.value = qIdx
+  try {
+    const tempId = editingId.value ?? 'mw_' + Date.now()
+    const url = await uploadMissingWordImage(blob, tempId, qIdx)
+    form.value.missionConfig.questions[qIdx].imageUrl = url
+  } finally {
+    missingWordUploading.value = null
+  }
 }
 
 const startCreate = () => {
@@ -399,6 +434,13 @@ const setCorrect = (qIdx, cIdx) => {
             <p class="text-rose-400/80">{{ t('admin.missions.audioNoteBody') }}</p>
           </div>
 
+          <!-- Missing word note -->
+          <div v-if="form.missionType === 'MissingWord'"
+               class="rounded-xl bg-blue-500/10 border border-blue-500/30 px-4 py-3 text-blue-300 text-sm space-y-1">
+            <p class="font-bold">🔍 {{ t('admin.missions.MissingWord') }}</p>
+            <p class="text-blue-400/80">{{ t('admin.missions.missingWordNoteBody') }}</p>
+          </div>
+
           <!-- Compass mission note -->
           <div v-if="form.missionType === 'CompassMission'"
                class="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-amber-300 text-sm space-y-1">
@@ -461,6 +503,33 @@ const setCorrect = (qIdx, cIdx) => {
                 </button>
               </div>
 
+              <!-- Per-question clue image (MissingWord only) -->
+              <div v-if="form.missionType === 'MissingWord'">
+                <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.missingWordImage') }}</label>
+                <p class="text-xs text-slate-500 mb-2">{{ t('admin.checkpoints.missingWordImageHint') }}</p>
+
+                <!-- Uploading spinner -->
+                <div v-if="missingWordUploading === qIdx" class="flex items-center gap-2 text-slate-400 text-sm py-2">
+                  <span class="animate-spin">⏳</span> {{ t('common.loading') }}
+                </div>
+
+                <!-- Image uploaded -->
+                <div v-else-if="q.imageUrl" class="flex items-start gap-3">
+                  <img :src="q.imageUrl" class="w-28 h-20 object-cover rounded-xl border border-blue-500/40" />
+                  <label class="btn-secondary text-xs py-1.5 px-3 cursor-pointer">
+                    {{ t('admin.checkpoints.missingWordChangeBtn') }}
+                    <input type="file" accept="image/*" class="hidden" @change="onMissingWordFilePick($event, qIdx)" />
+                  </label>
+                </div>
+
+                <!-- No image yet -->
+                <label v-else class="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-slate-600 bg-slate-800/50 hover:border-blue-500/50 transition-colors cursor-pointer w-full">
+                  <span class="text-xl">🔍</span>
+                  <span class="text-sm font-semibold text-slate-300">{{ t('admin.checkpoints.missingWordUploadBtn') }}</span>
+                  <input type="file" accept="image/*" class="hidden" @change="onMissingWordFilePick($event, qIdx)" />
+                </label>
+              </div>
+
               <!-- Question text -->
               <div class="grid md:grid-cols-2 gap-3">
                 <div>
@@ -474,7 +543,7 @@ const setCorrect = (qIdx, cIdx) => {
               </div>
 
               <!-- TextValidation: answer -->
-              <div v-if="form.missionType === 'TextValidation' || form.missionType === 'CompassMission'">
+              <div v-if="['TextValidation', 'MissingWord', 'CompassMission'].includes(form.missionType)">
                 <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.correctAnswer') }}</label>
                 <input v-model="q.answer" class="input-field font-mono text-sm"
                   :placeholder="form.missionType === 'CompassMission' ? t('admin.checkpoints.compassAnswerHint') : ''" />
@@ -545,6 +614,13 @@ const setCorrect = (qIdx, cIdx) => {
       :src="puzzleRawSrc"
       @confirm="onCropConfirm"
       @cancel="showCropper = false"
+    />
+
+    <ImageEditor
+      v-if="showImageEditor && imageEditorSrc"
+      :src="imageEditorSrc"
+      @confirm="onImageEditorConfirm"
+      @cancel="showImageEditor = false"
     />
 
     <ConfirmModal

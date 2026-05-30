@@ -165,6 +165,11 @@ export default {
       addQuestion: '+ הוסף שאלה',
       removeQuestion: 'הסר',
       compassAnswerHint: 'שם עיר או דרגות (לדוגמה: 120)',
+      missingWordImage: 'תמונת רמז',
+      missingWordImageHint: 'העלו תמונה ← הוסיפו סימונים (עיגול/חץ/מסכה לבנה) ← אשרו',
+      missingWordUploadBtn: 'העלאה וסימון',
+      missingWordChangeBtn: 'שנה / סמן מחדש',
+      missingWordEditorConfirm: 'השתמש בתמונה זו',
       puzzleImage: 'תמונת פאזל',
       puzzleCropTitle: 'בחרו את האזור לשימוש',
       puzzleCropHint: 'גררו את הריבוע הכתום כדי לבחור איזה חלק מהתמונה יהפוך לפאזל.',
@@ -220,6 +225,7 @@ export default {
       compassNoteBody: 'השחקנים משתמשים במצפן הטלפון לתשובה. לתשובות בדרגות (לדוגמה: 120), סבילות של ±15° מופעלת אוטומטית.',
       puzzleNoteBody: 'השחקנים יסדרו מחדש פאזל תמונה 3×3 על ידי החלפת חלקים. מותר עד 20 החלפות. העלו תמונה מרובעת או השתמשו בכלי החיתוך.',
       audioNoteBody: 'השחקנים מקליטים את עצמם שרים (או מדברים) למיקרופון. ההקלטה נשמרת אוטומטית וניתן להאזין לה בלשונית Monitor. השתמשו בשדה ההוראות כדי לציין מה לשיר.',
+      missingWordNoteBody: 'העלו ועצבו תמונת רמז לכל שאלה. השחקנים רואים את התמונה ומקלידים את המילה או הביטוי החסר.',
     },
     participants: {
       title: 'משתתפים',
@@ -287,6 +293,12 @@ export default {
       solved: 'נפתר ב-{count} החלפות!',
       nextTime: 'כמעט! בפעם הבאה תצליחו!',
       noImage: 'לא הוגדרה תמונה',
+    },
+    missingWord: {
+      placeholder: 'הקלידו את תשובתכם...',
+      submit: 'בדיקה',
+      wrongAnswer: 'תשובה שגויה — נסו שוב',
+      success: 'נכון!',
     },
     audioRecorder: {
       tapToStart: 'לחצו על המיקרופון להתחלת ההקלטה',
