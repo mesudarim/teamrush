@@ -11,6 +11,8 @@ const missionRegistry = {
   PhotoCapture:    defineAsyncComponent(() => import('@/components/missions/PhotoCapture.vue')),
   CompassMission:  defineAsyncComponent(() => import('@/components/missions/CompassMission.vue')),
   PuzzleMission:   defineAsyncComponent(() => import('@/components/missions/PuzzleMission.vue')),
+  AudioRecorder:   defineAsyncComponent(() => import('@/components/missions/AudioRecorder.vue')),
+  MissingWord:     defineAsyncComponent(() => import('@/components/missions/MissingWord.vue')),
 }
 
 const currentQuestion = computed(() => game.currentQuestion)

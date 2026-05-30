@@ -128,13 +128,18 @@ export const findParticipantByIdentifier = async (query_) => {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
-export const createTeam = async (pseudo, trackId) => {
+export const createTeam = async (pseudo, trackId, displayName = '') => {
   const ref = doc(db, 'teams', pseudo)
   const existing = await getDoc(ref)
-  if (existing.exists()) throw new Error('PSEUDO_TAKEN')
+  if (existing.exists()) {
+    // Update name in case it changed since last login
+    await updateDoc(ref, { displayName, updatedAt: serverTimestamp() })
+    return pseudo
+  }
   await setDoc(ref, {
     pseudo,
     trackId,
+    displayName,
     currentCheckpointIndex: 0,
     points: 0,
     startedAt: serverTimestamp(),
@@ -154,6 +159,15 @@ export const getTeam = async (pseudo) => {
 export const adjustPoints = async (pseudo, delta) => {
   await updateDoc(doc(db, 'teams', pseudo), {
     points: increment(delta),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// Persist the in-checkpoint phase so players can resume exactly where they left off
+export const saveTeamPhase = async (pseudo, phase, questionIndex = 0) => {
+  await updateDoc(doc(db, 'teams', pseudo), {
+    currentPhase: phase,
+    savedQuestionIndex: questionIndex,
     updatedAt: serverTimestamp(),
   })
 }
@@ -178,6 +192,8 @@ export const updateTeamProgress = async (pseudo, checkpointId, { missionAnswer }
       currentCheckpointIndex: newIndex,
       completedCheckpoints,
       checkpointTimes,
+      currentPhase: null,
+      savedQuestionIndex: 0,
       updatedAt: serverTimestamp(),
     })
   })
@@ -280,17 +296,39 @@ export const subscribeToCheckpoints = (callback) =>
 
 export const savePhotoRecord = async (data) => {
   await addDoc(collection(db, 'photos'), {
-    teamPseudo: data.teamPseudo,
-    checkpointId: data.checkpointId,
+    teamPseudo:      data.teamPseudo,
+    teamName:        data.teamName ?? data.teamPseudo,
+    checkpointId:    data.checkpointId,
     checkpointTitle: data.checkpointTitle ?? '',
-    url: data.url,
-    uploadedAt: serverTimestamp(),
+    url:             data.url,
+    uploadedAt:      serverTimestamp(),
   })
 }
 
 export const subscribeToPhotos = (callback) =>
   onSnapshot(
     query(collection(db, 'photos'), orderBy('uploadedAt', 'desc')),
+    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  )
+
+// ─── Audio Recordings ─────────────────────────────────────────────────────────
+
+export const saveAudioRecord = async (data) => {
+  await addDoc(collection(db, 'audioRecordings'), {
+    teamPseudo:      data.teamPseudo,
+    teamName:        data.teamName ?? data.teamPseudo,
+    checkpointId:    data.checkpointId,
+    checkpointTitle: data.checkpointTitle ?? '',
+    url:             data.url,
+    mimeType:        data.mimeType ?? '',
+    durationSeconds: data.durationSeconds ?? 0,
+    uploadedAt:      serverTimestamp(),
+  })
+}
+
+export const subscribeToAudioRecordings = (callback) =>
+  onSnapshot(
+    query(collection(db, 'audioRecordings'), orderBy('uploadedAt', 'desc')),
     (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   )
 

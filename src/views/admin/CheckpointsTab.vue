@@ -51,7 +51,7 @@ function emptyForm() {
   }
 }
 
-const missionTypes = ['TextValidation', 'MultipleChoice', 'PhotoCapture', 'CompassMission', 'PuzzleMission']
+const missionTypes = ['TextValidation', 'MultipleChoice', 'PhotoCapture', 'CompassMission', 'PuzzleMission', 'AudioRecorder']
 
 // ─── Puzzle image ────────────────────────────────────────────────────────────
 
@@ -392,6 +392,13 @@ const setCorrect = (qIdx, cIdx) => {
             </div>
           </div>
 
+          <!-- Audio recorder note -->
+          <div v-if="form.missionType === 'AudioRecorder'"
+               class="rounded-xl bg-rose-500/10 border border-rose-500/30 px-4 py-3 text-rose-300 text-sm space-y-1">
+            <p class="font-bold">🎤 {{ t('admin.missions.AudioRecorder') }}</p>
+            <p class="text-rose-400/80">{{ t('admin.missions.audioNoteBody') }}</p>
+          </div>
+
           <!-- Compass mission note -->
           <div v-if="form.missionType === 'CompassMission'"
                class="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-amber-300 text-sm space-y-1">
@@ -434,7 +441,7 @@ const setCorrect = (qIdx, cIdx) => {
           </div>
 
           <!-- Questions list (not shown for self-contained mission types) -->
-          <div v-if="!['PhotoCapture', 'PuzzleMission'].includes(form.missionType)" class="space-y-4">
+          <div v-if="!['PhotoCapture', 'PuzzleMission', 'AudioRecorder'].includes(form.missionType)" class="space-y-4">
             <div
               v-for="(q, qIdx) in form.missionConfig.questions"
               :key="qIdx"
@@ -516,7 +523,7 @@ const setCorrect = (qIdx, cIdx) => {
               <label class="block text-sm font-semibold text-green-400 mb-1">{{ t('admin.checkpoints.pointsCorrect') }}</label>
               <input v-model="form.pointsCorrect" type="number" min="0" class="input-field text-green-400 font-bold" />
             </div>
-            <div v-if="!['PhotoCapture', 'PuzzleMission'].includes(form.missionType)">
+            <div v-if="!['PhotoCapture', 'PuzzleMission', 'AudioRecorder'].includes(form.missionType)">
               <label class="block text-sm font-semibold text-red-400 mb-1">{{ t('admin.checkpoints.pointsWrong') }}</label>
               <input v-model="form.pointsWrong" type="number" min="0" class="input-field text-red-400 font-bold" />
             </div>

@@ -23,3 +23,15 @@ export const uploadPuzzleImage = async (blob, checkpointId) => {
   const snap = await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
   return getDownloadURL(snap.ref)
 }
+
+export const uploadAudioRecording = async (blob, checkpointId, pseudo, ext, mimeType) => {
+  const storageRef = ref(storage, `recordings/${checkpointId}/${pseudo}_${Date.now()}.${ext}`)
+  const snap = await uploadBytes(storageRef, blob, { contentType: mimeType || 'audio/webm' })
+  return getDownloadURL(snap.ref)
+}
+
+export const uploadMissingWordImage = async (blob, checkpointId, qIdx) => {
+  const storageRef = ref(storage, `missing-words/${checkpointId}/q${qIdx}_${Date.now()}.jpg`)
+  const snap = await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
+  return getDownloadURL(snap.ref)
+}

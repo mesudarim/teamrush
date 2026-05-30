@@ -2,6 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { createTeam, getTeam, findParticipantByIdentifier, updateParticipant } from '@/firebase/firestore'
 
+const PSEUDO_KEY       = 'teamrush_pseudo'
+const PARTICIPANT_KEY  = 'teamrush_participant'
+
 export const useAuthStore = defineStore('auth', () => {
   const team = ref(null)
   const participant = ref(null)
@@ -16,30 +19,21 @@ export const useAuthStore = defineStore('auth', () => {
     isLoading.value = true
     error.value = null
     try {
-      // 1. Find participant in the pre-registered list
       const found = await findParticipantByIdentifier(identifier)
-      if (!found) {
-        throw new Error('NOT_ON_LIST')
-      }
+      if (!found) throw new Error('NOT_ON_LIST')
 
-      // 2. Use participant ID as the team pseudo for uniqueness
       const teamPseudo = found.id
       participant.value = found
 
-      // 3. Create or rejoin team
-      let existing = await getTeam(teamPseudo)
-      if (existing) {
-        team.value = existing
-      } else {
-        await createTeam(teamPseudo, trackId)
-        team.value = await getTeam(teamPseudo)
-      }
+      // createTeam handles both new teams and returning players (updates displayName)
+      await createTeam(teamPseudo, trackId, found.name ?? '')
+      team.value = await getTeam(teamPseudo)
 
-      // 4. Mark participant as logged in
       await updateParticipant(found.id, { loggedIn: true, teamId: teamPseudo, lastLoginAt: new Date() })
 
-      sessionStorage.setItem('teamrush_pseudo', teamPseudo)
-      sessionStorage.setItem('teamrush_participant', JSON.stringify(found))
+      // localStorage so the session survives closing the browser/tab
+      localStorage.setItem(PSEUDO_KEY, teamPseudo)
+      localStorage.setItem(PARTICIPANT_KEY, JSON.stringify(found))
       return true
     } catch (e) {
       error.value = e.message
@@ -52,19 +46,23 @@ export const useAuthStore = defineStore('auth', () => {
   const logout = () => {
     team.value = null
     participant.value = null
-    sessionStorage.removeItem('teamrush_pseudo')
-    sessionStorage.removeItem('teamrush_participant')
+    localStorage.removeItem(PSEUDO_KEY)
+    localStorage.removeItem(PARTICIPANT_KEY)
   }
 
   const restoreSession = async () => {
-    const savedPseudo = sessionStorage.getItem('teamrush_pseudo')
-    const savedParticipant = sessionStorage.getItem('teamrush_participant')
-    if (savedPseudo) {
-      const data = await getTeam(savedPseudo)
-      if (data) {
-        team.value = data
-        if (savedParticipant) participant.value = JSON.parse(savedParticipant)
-      }
+    const savedPseudo      = localStorage.getItem(PSEUDO_KEY)
+    const savedParticipant = localStorage.getItem(PARTICIPANT_KEY)
+    if (!savedPseudo) return
+    // Always fetch fresh data from Firestore so points/phase are current
+    const data = await getTeam(savedPseudo)
+    if (data) {
+      team.value = data
+      if (savedParticipant) participant.value = JSON.parse(savedParticipant)
+    } else {
+      // Team was deleted — clear stale session
+      localStorage.removeItem(PSEUDO_KEY)
+      localStorage.removeItem(PARTICIPANT_KEY)
     }
   }
 

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getTrack, getCheckpoint, updateTeamProgress, startCheckpointTimer, markTeamFinished, subscribeToTeam, adjustPoints } from '@/firebase/firestore'
+import { getTrack, getCheckpoint, updateTeamProgress, startCheckpointTimer, markTeamFinished, subscribeToTeam, adjustPoints, saveTeamPhase } from '@/firebase/firestore'
 import { useAuthStore } from './auth'
 
 export const useGameStore = defineStore('game', () => {
@@ -42,7 +42,7 @@ export const useGameStore = defineStore('game', () => {
     const type = cp?.missionType ?? 'MultipleChoice'
     if (!mc) return []
     // These mission types are self-contained — no question array needed
-    if (type === 'PhotoCapture' || type === 'PuzzleMission') {
+    if (type === 'PhotoCapture' || type === 'PuzzleMission' || type === 'AudioRecorder') {
       return [{ type }]
     }
     if (Array.isArray(mc.questions) && mc.questions.length > 0) {
@@ -88,6 +88,13 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
+  // Phases that can be safely restored (before checkpoint completion)
+  const RESTORABLE_PHASES = new Set(['stage1', 'bravo', 'envelope2', 'stage2'])
+
+  const persistPhase = (p, qIdx = 0) => {
+    if (authStore.pseudo) saveTeamPhase(authStore.pseudo, p, qIdx).catch(() => {})
+  }
+
   const loadCurrentCheckpoint = async () => {
     const idx = authStore.team?.currentCheckpointIndex ?? 0
     if (idx >= checkpoints.value.length) {
@@ -95,8 +102,18 @@ export const useGameStore = defineStore('game', () => {
       return
     }
     currentCheckpoint.value = checkpoints.value[idx]
-    phase.value = 'envelope1'
-    currentQuestionIndex.value = 0
+
+    // Restore saved phase if valid for this checkpoint
+    const saved = authStore.team?.currentPhase
+    const savedQIdx = authStore.team?.savedQuestionIndex ?? 0
+    if (saved && RESTORABLE_PHASES.has(saved)) {
+      phase.value = saved
+      currentQuestionIndex.value = saved === 'stage2' ? (savedQIdx || 0) : 0
+    } else {
+      phase.value = 'envelope1'
+      currentQuestionIndex.value = 0
+    }
+
     checkpointDelta.value = 0
     lastPointsDelta.value = 0
     stage2Result.value = null
@@ -106,19 +123,32 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
-  const openEnvelope1 = () => { phase.value = 'stage1' }
+  const openEnvelope1 = () => {
+    phase.value = 'stage1'
+    persistPhase('stage1')
+  }
 
   const validateStage1 = (input) => {
     const keyword = currentCheckpoint.value?.stage1Keyword ?? ''
     const correct = input.trim().toLowerCase() === keyword.trim().toLowerCase()
     if (correct) {
-      setTimeout(() => { phase.value = 'bravo' }, 600)
+      setTimeout(() => {
+        phase.value = 'bravo'
+        persistPhase('bravo')
+      }, 600)
     }
     return correct
   }
 
-  const advanceToBravo = () => { phase.value = 'envelope2' }
-  const openEnvelope2 = () => { phase.value = 'stage2' }
+  const advanceToBravo = () => {
+    phase.value = 'envelope2'
+    persistPhase('envelope2')
+  }
+
+  const openEnvelope2 = () => {
+    phase.value = 'stage2'
+    persistPhase('stage2', 0)
+  }
 
   // Called per question attempt (correct or wrong)
   const answerQuestion = async (isCorrect) => {
@@ -131,9 +161,10 @@ export const useGameStore = defineStore('game', () => {
     await authStore.refreshTeam()
   }
 
-  // Advance to next question
+  // Advance to next question (and persist so a refresh lands on the right question)
   const advanceQuestion = () => {
     currentQuestionIndex.value++
+    persistPhase('stage2', currentQuestionIndex.value)
   }
 
   // All questions answered correctly — finalise checkpoint

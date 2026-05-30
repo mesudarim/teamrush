@@ -74,8 +74,9 @@ const confirmPhoto = async () => {
   try {
     const url = await uploadPhoto(selectedBlob.value, props.checkpoint.id, auth.pseudo)
     await savePhotoRecord({
-      teamPseudo: auth.pseudo,
-      checkpointId: props.checkpoint.id,
+      teamPseudo:      auth.pseudo,
+      teamName:        auth.participant?.name ?? auth.pseudo,
+      checkpointId:    props.checkpoint.id,
       checkpointTitle: props.checkpoint.title ?? '',
       url,
     })
