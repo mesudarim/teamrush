@@ -44,12 +44,12 @@ const handleClick = () => {
         <!-- Black center: brand small + label big -->
         <div class="absolute left-0 right-0 flex flex-col items-center justify-center gap-1 bg-black"
              style="top:18%; bottom:22%;">
-          <span class="text-amber-400/70 font-bold tracking-[0.25em] uppercase text-center px-4"
-                style="font-size: clamp(0.5rem, 2.2vw, 0.7rem);">
+          <span class="font-sans text-amber-400/70 font-bold tracking-[0.25em] uppercase text-center px-4"
+                style="font-size: clamp(0.5rem, 2.2vw, 0.7rem); font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
             {{ brandText }}
           </span>
-          <span class="text-amber-400 font-black tracking-wider leading-none text-center px-4"
-                style="font-size: clamp(2rem, 9vw, 3rem);">
+          <span class="font-sans text-amber-400 font-bold tracking-wider leading-none text-center px-4"
+                style="font-size: clamp(2rem, 9vw, 3rem); font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
             {{ label }}
           </span>
         </div>

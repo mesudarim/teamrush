@@ -27,7 +27,8 @@ const points = computed(() => Math.abs(game.lastPointsDelta))
         <!-- Message -->
         <div>
           <h2
-            :class="['text-2xl font-black mb-2', correct ? 'text-green-400' : 'text-red-400']"
+            :class="['text-2xl font-bold mb-2', correct ? 'text-green-400' : 'text-red-400']"
+            style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;"
           >
             {{ correct
               ? t('game.stage2.correct', { points })
@@ -37,8 +38,8 @@ const points = computed(() => Math.abs(game.lastPointsDelta))
         </div>
 
         <!-- Next button -->
-        <button @click="game.advanceToNext()" class="btn-primary w-full text-lg py-4">
-          {{ t('game.stage2.next') }} →
+        <button @click="game.advanceToNext()" class="btn-primary w-full text-2xl py-4">
+          {{ t('game.stage2.next') }}
         </button>
       </div>
     </div>

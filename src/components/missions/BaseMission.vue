@@ -14,13 +14,15 @@ const props = defineProps({
   config: { type: Object, default: () => ({}) },
   submitted: { type: Boolean, default: false },
   correct: { type: Boolean, default: null },
+  instructionOverride: { type: String, default: null },
 })
 
-const instruction = computed(() =>
-  locale.value === 'en' && props.config.instructionEn
+const instruction = computed(() => {
+  if (props.instructionOverride !== null) return props.instructionOverride
+  return locale.value === 'en' && props.config.instructionEn
     ? props.config.instructionEn
     : props.config.instruction ?? ''
-)
+})
 
 import { computed } from 'vue'
 </script>

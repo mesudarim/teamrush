@@ -1,13 +1,18 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useGameStore } from '@/stores/game'
 
-const { t } = useI18n()
+const { t, tm } = useI18n()
 const game = useGameStore()
 
-// Auto-advance to envelope2 after 3.5s
-onMounted(() => setTimeout(() => game.advanceToBravo(), 3500))
+const bravoMessage = ref('')
+
+onMounted(() => {
+  const msgs = tm('game.bravo.messages')
+  bravoMessage.value = msgs[Math.floor(Math.random() * msgs.length)]
+  setTimeout(() => game.advanceToBravo(), 3500)
+})
 </script>
 
 <template>
@@ -26,7 +31,7 @@ onMounted(() => setTimeout(() => game.advanceToBravo(), 3500))
     </div>
 
     <!-- BRAVO text -->
-    <h1 class="bravo-text font-black mb-2">BRAVO !</h1>
+    <h1 class="bravo-text font-bold mb-2" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ bravoMessage }}</h1>
     <p class="text-slate-300 text-lg mb-8">{{ t('game.stage1.correct') }}</p>
 
     <!-- Progress dots -->

@@ -109,7 +109,7 @@ onUnmounted(() => {
         <div class="text-7xl animate-bounce">🏆</div>
 
         <div>
-          <h1 class="text-3xl font-black text-shimmer mb-1">{{ t('game.finished.title') }}</h1>
+          <h1 class="text-3xl font-bold text-shimmer mb-1" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ t('game.finished.title') }}</h1>
           <p class="text-slate-400 text-sm">{{ t('game.finished.subtitle') }}</p>
         </div>
 

@@ -22,7 +22,7 @@ watch(() => game.pointsAnimation, ({ pts }) => {
       v-for="burst in bursts"
       :key="burst.id"
       class="absolute"
-      style="top: 82px; right: 20px;"
+      style="bottom: 100px; inset-inline-end: 20px;"
     >
       <!-- Main floating label -->
       <div

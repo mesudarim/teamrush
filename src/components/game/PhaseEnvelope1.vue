@@ -32,14 +32,16 @@ const proceed = () => game.openEnvelope1()
 
     <!-- Instruction above envelope -->
     <div class="text-center mb-6 animate-fade-in">
-      <div class="badge-amber mb-3">
+      <div class="badge-amber mb-3" style="font-size: 1rem; padding: 0.4rem 1rem;">
         {{ t('game.checkpoint') }} {{ game.currentIndex + 1 }} / {{ game.checkpoints.length }}
       </div>
       <Transition name="feedback" mode="out-in">
-        <p v-if="!envelopeOpened" key="open" class="text-slate-300 text-base font-medium">
+        <p v-if="!envelopeOpened" key="open" class="text-slate-300 text-xl font-medium"
+           style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
           {{ t('game.envelope1.openInstruction') }}
         </p>
-        <p v-else key="hurry" class="text-amber-400 text-base font-black animate-pulse">
+        <p v-else key="hurry" class="text-amber-400 text-xl font-bold animate-pulse"
+           style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
           ⚡ {{ t('game.envelope1.hurryUp') }} ⚡
         </p>
       </Transition>
@@ -57,14 +59,17 @@ const proceed = () => game.openEnvelope1()
       <div class="space-y-5 text-center">
 
         <!-- Destination name -->
-        <div class="animate-bounce-in">
-          <p class="text-amber-400/60 text-xs font-bold tracking-[0.25em] uppercase mb-1">
+        <div class="animate-slide-up">
+          <p class="text-amber-400/60 font-bold tracking-[0.25em] uppercase mb-1"
+             style="font-size: 1rem; font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
             {{ $i18n.locale === 'en' ? '▼ YOUR DESTINATION ▼' : '▼ היעד שלכם ▼' }}
           </p>
-          <h2 class="text-amber-400 font-black leading-tight" style="font-size: clamp(1.8rem, 8vw, 2.6rem);">
+          <h2 class="text-amber-400 font-bold leading-tight"
+              style="font-size: clamp(1.8rem, 8vw, 2.6rem); font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
             {{ title }}
           </h2>
-          <p v-if="description" class="text-slate-300 text-sm font-medium mt-2 leading-relaxed">
+          <p v-if="description" class="text-slate-200 text-xl font-bold mt-2 leading-relaxed"
+             style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
             {{ description }}
           </p>
         </div>
@@ -82,7 +87,8 @@ const proceed = () => game.openEnvelope1()
         </Transition>
 
         <!-- CTA -->
-        <button @click="proceed" class="btn-primary w-full py-4 text-base font-black">
+        <button @click="proceed" class="btn-primary w-full py-4 text-2xl font-bold"
+                style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
           📍 {{ t('game.envelope1.arrivedBtn') }}
         </button>
       </div>

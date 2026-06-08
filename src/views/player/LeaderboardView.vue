@@ -78,7 +78,7 @@ onUnmounted(() => lb.cleanup())
           <!-- Team info -->
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
-              <span class="font-bold text-white truncate">{{ team.pseudo }}</span>
+              <span class="font-bold text-white truncate">{{ team.displayName || team.pseudo }}</span>
               <span v-if="team.pseudo === auth.pseudo" class="badge-amber text-xs">{{ t('leaderboard.team') }}</span>
               <span v-if="team.isFinished" class="badge-green text-xs">{{ t('leaderboard.finished') }}</span>
             </div>

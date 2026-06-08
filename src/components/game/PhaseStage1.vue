@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useGameStore } from '@/stores/game'
 import QrScanner from '@/components/ui/QrScanner.vue'
+import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 
 const { t, locale } = useI18n()
 const game = useGameStore()
@@ -22,6 +23,15 @@ const input = ref('')
 const submitted = ref(false)
 const isCorrect = ref(false)
 const showScanner = ref(false)
+const showSkipConfirm = ref(false)
+const skipping = ref(false)
+
+const confirmSkip = async () => {
+  skipping.value = true
+  await game.skipStage1()
+  skipping.value = false
+  showSkipConfirm.value = false
+}
 
 const submit = (value = input.value) => {
   if (!value.trim() || (submitted.value && isCorrect.value)) return
@@ -48,8 +58,8 @@ const onQrDecoded = (value) => {
         <div class="w-16 h-16 mx-auto mb-3 rounded-full bg-blue-500/20 border-2 border-blue-500/40 flex items-center justify-center text-3xl">
           {{ mode === 'qr' ? '📷' : '🔐' }}
         </div>
-        <div class="badge-blue mb-2">{{ t('game.stage1.title') }}</div>
-        <p class="text-slate-300 text-sm">{{ instruction }}</p>
+        <div class="badge-blue mb-2 text-base px-4 py-1.5">{{ t('game.stage1.title') }}</div>
+        <p class="text-slate-300 text-xl font-bold leading-snug">{{ instruction }}</p>
       </div>
 
       <!-- ── MISSING WORD MODE ── -->
@@ -109,7 +119,7 @@ const onQrDecoded = (value) => {
       </div>
 
       <!-- ── QR MODE ── -->
-      <div v-else class="space-y-3">
+      <div v-else-if="mode === 'qr'" class="space-y-3">
         <Transition name="feedback">
           <div v-if="submitted"
                :class="['flex items-center justify-center gap-2 p-3 rounded-xl text-sm font-semibold',
@@ -137,7 +147,22 @@ const onQrDecoded = (value) => {
         <QrScanner v-if="showScanner" @decoded="onQrDecoded" @close="showScanner = false" />
       </div>
 
+      <!-- Skip button -->
+      <div v-if="!(submitted && isCorrect)" class="mt-4 text-center">
+        <button @click="showSkipConfirm = true"
+                class="text-xs text-slate-500 hover:text-red-400 underline underline-offset-2 transition-colors">
+          {{ t('game.skip.btnStage1', { cost: game.SKIP_COST }) }}
+        </button>
+      </div>
+
     </div>
+
+    <ConfirmModal
+      :is-open="showSkipConfirm"
+      :message="t('game.skip.confirmStage1', { cost: game.SKIP_COST })"
+      @confirm="confirmSkip"
+      @cancel="showSkipConfirm = false"
+    />
   </div>
 </template>
 

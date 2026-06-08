@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { uploadAudioRecording } from '@/firebase/storage'
@@ -18,17 +18,34 @@ const emit = defineEmits(['correct'])
 
 const MAX_SECONDS = 180
 
-// state: idle | requesting | recording | recorded | uploading | done
-const state    = ref('idle')
-const error    = ref(null)
-const elapsed  = ref(0)
-const audioUrl = ref(null)
-const mimeType = ref('audio/webm')
+const instructionOverride = computed(() => {
+  switch (state.value) {
+    case 'recording':  return t('missions.audioRecorder.instructionRecording')
+    case 'checking':   return t('missions.audioRecorder.instructionChecking')
+    case 'recorded':
+    case 'retry':
+    case 'uploading':
+    case 'done':       return ''
+    default:           return null  // null = afficher l'instruction originale du checkpoint
+  }
+})
 
-let mediaRecorder = null
-let stream = null
-let chunks = []
-let timerInterval = null
+// state: idle | requesting | recording | recorded | checking | retry | uploading | done
+const state            = ref('idle')
+const error            = ref(null)
+const elapsed          = ref(0)
+const audioUrl         = ref(null)
+const mimeType         = ref('audio/webm')
+const attemptCount     = ref(0)
+const checkingProgress = ref(0)
+const checkingStep     = ref(0)
+
+let mediaRecorder    = null
+let stream           = null
+let chunks           = []
+let timerInterval    = null
+let checkingTimeout  = null
+let checkingInterval = null
 
 const formatTime = (s) =>
   `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
@@ -90,10 +107,13 @@ const startRecording = async () => {
     const blob = new Blob(chunks, { type: mimeType.value })
     if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
     audioUrl.value = URL.createObjectURL(blob)
-    // Store blob reference for upload
     mediaRecorder._blob = blob
-    state.value = 'recorded'
     stopStream()
+    if (attemptCount.value === 0) {
+      startFakeCheck()
+    } else {
+      state.value = 'recorded'
+    }
   }
 
   mediaRecorder.start(100)
@@ -112,12 +132,36 @@ const stopRecording = () => {
 }
 
 const retake = () => {
+  clearTimeout(checkingTimeout)
+  clearInterval(checkingInterval)
   if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
   audioUrl.value = null
   mediaRecorder = null
   elapsed.value = 0
   error.value = null
+  checkingProgress.value = 0
+  checkingStep.value = 0
   state.value = 'idle'
+}
+
+const startFakeCheck = () => {
+  state.value = 'checking'
+  checkingProgress.value = 0
+  checkingStep.value = 0
+  const start = Date.now()
+  checkingInterval = setInterval(() => {
+    const ms = Date.now() - start
+    checkingProgress.value = Math.min((ms / 5000) * 100, 100)
+    checkingStep.value = Math.min(Math.floor(ms / 1700), 2)
+  }, 80)
+  checkingTimeout = setTimeout(() => {
+    clearInterval(checkingInterval)
+    checkingProgress.value = 100
+    setTimeout(() => {
+      state.value = 'retry'
+      attemptCount.value++
+    }, 300)
+  }, 5000)
 }
 
 const submit = async () => {
@@ -147,13 +191,15 @@ const submit = async () => {
 
 onUnmounted(() => {
   clearInterval(timerInterval)
+  clearInterval(checkingInterval)
+  clearTimeout(checkingTimeout)
   stopStream()
   if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
 })
 </script>
 
 <template>
-  <BaseMission :checkpoint="checkpoint" :config="config">
+  <BaseMission :checkpoint="checkpoint" :config="config" :instruction-override="instructionOverride">
     <div class="space-y-5">
 
       <!-- Success -->
@@ -232,6 +278,38 @@ onUnmounted(() => {
           class="w-full btn-primary py-3 font-bold"
         >
           {{ t('missions.audioRecorder.submitBtn', { points: checkpoint.pointsCorrect ?? 100 }) }}
+        </button>
+      </div>
+
+      <!-- ── CHECKING (fake quality analysis) ── -->
+      <div v-if="state === 'checking'" class="flex flex-col items-center gap-4 py-2">
+        <div class="text-4xl">🎙️</div>
+        <div class="w-full space-y-2">
+          <div class="flex justify-between text-xs text-slate-400">
+            <span>{{ t('missions.audioRecorder.checkingTitle') }}</span>
+            <span>{{ Math.round(checkingProgress) }}%</span>
+          </div>
+          <div class="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
+            <div
+              class="h-full bg-gradient-to-r from-amber-500 to-amber-300 rounded-full transition-all duration-100"
+              :style="{ width: checkingProgress + '%' }"
+            />
+          </div>
+        </div>
+        <p class="text-amber-400 text-sm font-medium text-center animate-pulse">
+          {{ t(`missions.audioRecorder.checkingStep${checkingStep}`) }}
+        </p>
+      </div>
+
+      <!-- ── RETRY (feedback after first attempt) ── -->
+      <div v-if="state === 'retry'" class="space-y-4">
+        <div class="flex flex-col items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-center">
+          <span class="text-4xl">⚠️</span>
+          <p class="text-amber-400 font-bold text-lg">{{ t('missions.audioRecorder.retryTitle') }}</p>
+          <p class="text-slate-300 text-sm leading-relaxed">{{ t('missions.audioRecorder.retryFeedback') }}</p>
+        </div>
+        <button @click="retake" class="w-full btn-primary py-3 font-bold text-lg">
+          🎙️ {{ t('missions.audioRecorder.retakeBtn') }}
         </button>
       </div>
 

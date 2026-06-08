@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useGameStore } from '@/stores/game'
 import { useAuthStore } from '@/stores/auth'
@@ -18,46 +18,27 @@ const { t } = useI18n()
 const game = useGameStore()
 const auth = useAuthStore()
 
-onMounted(() => game.loadTrack())
-onUnmounted(() => game.cleanup())
+// ── Back button prevention ────────────────────────────────────────────────────
+const blockBack = () => {
+  history.pushState(null, '', window.location.pathname)
+}
+
+onMounted(() => {
+  game.loadTrack()
+  history.pushState(null, '', window.location.pathname)
+  window.addEventListener('popstate', blockBack)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('popstate', blockBack)
+  game.cleanup()
+})
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-900 flex flex-col">
+  <div class="min-h-screen bg-slate-900 flex flex-col pb-24">
     <PointsPopup />
     <PlayerNav />
-
-    <!-- Timer + points + progress bar -->
-    <div v-if="!game.isLoading && game.checkpoints.length" class="bg-slate-900 border-b border-slate-800">
-      <div class="max-w-lg mx-auto px-4 pt-3 pb-2">
-
-        <!-- Timer + Points row -->
-        <div class="flex items-end justify-between mb-2">
-          <!-- Timer — large and centered -->
-          <div class="flex-1 text-center">
-            <div class="tabular-nums font-black text-white leading-none" style="font-size: clamp(2.4rem, 10vw, 3.5rem); letter-spacing: 0.04em;">
-              {{ game.formatTime(game.elapsedSeconds) }}
-            </div>
-            <div class="text-xs text-slate-500 mt-0.5 tracking-wider uppercase">⏱ {{ t('game.timer') }}</div>
-          </div>
-          <!-- Points — right side -->
-          <div class="text-end min-w-[70px]">
-            <div class="text-2xl font-black text-amber-400 tabular-nums leading-none">{{ game.totalPoints }}</div>
-            <div class="text-xs text-slate-500 mt-0.5 tracking-wider uppercase">⭐ {{ t('game.points') }}</div>
-          </div>
-        </div>
-
-        <!-- Checkpoint label + progress bar -->
-        <div class="flex justify-between text-xs text-slate-400 mb-1">
-          <span>{{ t('game.checkpoint') }} {{ game.currentIndex + 1 }} / {{ game.checkpoints.length }}</span>
-          <span>{{ Math.round(game.progress) }}%</span>
-        </div>
-        <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: game.progress + '%' }" />
-        </div>
-
-      </div>
-    </div>
 
     <!-- Main content -->
     <div class="flex-1 flex flex-col">
@@ -86,6 +67,58 @@ onUnmounted(() => game.cleanup())
           <PhaseFinished     v-else-if="game.phase === 'finished'"  key="finished" />
         </Transition>
       </template>
+    </div>
+
+    <!-- ── Fixed bottom bar ── -->
+    <div
+      v-if="!game.isLoading && game.checkpoints.length && game.phase !== 'finished'"
+      class="fixed bottom-0 inset-x-0 z-30 bg-slate-900/95 backdrop-blur border-t border-slate-700/60"
+    >
+      <div class="max-w-lg mx-auto px-4 pt-2 pb-3">
+
+        <!-- Timer · Checkpoint name · Points -->
+        <div class="flex items-center justify-between gap-2 mb-1.5">
+
+          <!-- Timer -->
+          <div class="text-center shrink-0">
+            <div class="tabular-nums font-black text-white leading-none"
+                 style="font-size: clamp(1.4rem, 5.5vw, 1.9rem); letter-spacing: 0.03em;">
+              {{ game.formatTime(game.elapsedSeconds) }}
+            </div>
+            <div class="text-xs text-slate-500 tracking-wider uppercase">⏱ {{ t('game.timer') }}</div>
+          </div>
+
+          <!-- Checkpoint name — hidden during envelope1 (spoiler) -->
+          <div v-if="game.currentCheckpoint && game.phase !== 'envelope1'" class="flex-1 text-center min-w-0 px-1">
+            <div class="font-bold text-amber-400 leading-tight truncate"
+                 style="font-size: clamp(1.2rem, 5vw, 1.7rem); font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
+              {{ ($i18n.locale === 'en' && game.currentCheckpoint.titleEn)
+                  ? game.currentCheckpoint.titleEn
+                  : game.currentCheckpoint.title }}
+            </div>
+          </div>
+
+          <!-- Points -->
+          <div class="text-end shrink-0">
+            <div class="font-black text-amber-400 tabular-nums leading-none"
+                 style="font-size: clamp(1.4rem, 5.5vw, 1.9rem);">
+              {{ game.totalPoints }}
+            </div>
+            <div class="text-xs text-slate-500 tracking-wider uppercase">⭐ {{ t('game.points') }}</div>
+          </div>
+
+        </div>
+
+        <!-- Progress bar -->
+        <div class="flex justify-between text-xs text-slate-500 mb-1">
+          <span>{{ t('game.checkpoint') }} {{ game.currentIndex + 1 }} / {{ game.checkpoints.length }}</span>
+          <span>{{ Math.round(game.progress) }}%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" :style="{ width: game.progress + '%' }" />
+        </div>
+
+      </div>
     </div>
   </div>
 </template>

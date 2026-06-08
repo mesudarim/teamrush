@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { createTeam, getTeam, findParticipantByIdentifier, updateParticipant } from '@/firebase/firestore'
+import { createTeam, getTeam, findParticipantByIdentifier, updateParticipant, resetTeamProgress } from '@/firebase/firestore'
 
 const PSEUDO_KEY       = 'teamrush_pseudo'
 const PARTICIPANT_KEY  = 'teamrush_participant'
@@ -50,6 +50,13 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem(PARTICIPANT_KEY)
   }
 
+  const resetAndLogout = async () => {
+    if (team.value?.pseudo) {
+      await resetTeamProgress(team.value.pseudo, team.value.trackId)
+    }
+    logout()
+  }
+
   const restoreSession = async () => {
     const savedPseudo      = localStorage.getItem(PSEUDO_KEY)
     const savedParticipant = localStorage.getItem(PARTICIPANT_KEY)
@@ -71,5 +78,5 @@ export const useAuthStore = defineStore('auth', () => {
     team.value = await getTeam(pseudo.value)
   }
 
-  return { team, participant, isLoading, error, isLoggedIn, pseudo, trackId, login, logout, restoreSession, refreshTeam }
+  return { team, participant, isLoading, error, isLoggedIn, pseudo, trackId, login, logout, resetAndLogout, restoreSession, refreshTeam }
 })

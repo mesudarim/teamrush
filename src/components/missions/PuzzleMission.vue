@@ -76,10 +76,9 @@ const selectPiece = (cellIdx) => {
 
 const onVictory = () => {
   solved.value = true
-  // Show complete image 2.5s then success card
   setTimeout(() => {
     completed.value = true
-    setTimeout(() => emit('correct'), 2000)
+    setTimeout(() => emit('correct', MAX_MOVES - count.value), 2000)
   }, 2500)
 }
 
@@ -192,7 +191,7 @@ const movesOverHalf = computed(() => count.value > MAX_MOVES * 0.75)
               <div class="text-6xl mb-3">🏆</div>
               <div class="text-2xl font-black text-white mb-1">{{ t('missions.puzzleMission.bravo') }}</div>
               <div class="text-green-200 text-sm">{{ t('missions.puzzleMission.solved', { count }) }}</div>
-              <div class="text-3xl font-black text-amber-300 mt-3">+{{ checkpoint.pointsCorrect ?? 100 }} pts</div>
+              <div class="text-3xl font-black text-amber-300 mt-3">+{{ (checkpoint.pointsCorrect ?? 5) + (MAX_MOVES - count) }} pts</div>
             </div>
           </div>
         </Transition>

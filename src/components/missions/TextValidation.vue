@@ -159,7 +159,7 @@ const submit = async () => {
         <div v-if="timerEnabled && !missionStarted" key="prestart" class="text-center space-y-5 py-2">
           <div class="text-5xl">⏱</div>
           <div>
-            <h3 class="font-black text-white text-lg mb-1">{{ t('missions.textValidation.timedTitle') }}</h3>
+            <h3 class="font-bold text-white text-lg mb-1" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ t('missions.textValidation.timedTitle') }}</h3>
             <p class="text-slate-300 text-sm leading-relaxed">{{ t('missions.textValidation.timedBody') }}</p>
           </div>
           <div class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-base">

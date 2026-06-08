@@ -1,8 +1,11 @@
 <script setup>
-import { computed, defineAsyncComponent } from 'vue'
+import { ref, computed, defineAsyncComponent } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useGameStore } from '@/stores/game'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
+import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 
+const { t } = useI18n()
 const game = useGameStore()
 
 const missionRegistry = {
@@ -23,8 +26,8 @@ const MissionComponent = computed(() => {
 })
 const isMulti = computed(() => game.questions.length > 1)
 
-const onCorrect = async () => {
-  await game.answerQuestion(true)
+const onCorrect = async (bonusPoints = 0) => {
+  await game.answerQuestion(true, bonusPoints)
   const isLast = game.currentQuestionIndex >= game.questions.length - 1
   if (isLast) {
     await game.finishAllQuestions()
@@ -35,6 +38,17 @@ const onCorrect = async () => {
 
 const onWrong = async () => {
   await game.answerQuestion(false)
+}
+
+// ── Skip ──────────────────────────────────────────────────────────────────────
+const showSkipConfirm = ref(false)
+const skipping = ref(false)
+
+const confirmSkip = async () => {
+  skipping.value = true
+  await game.skipCheckpoint()
+  skipping.value = false
+  showSkipConfirm.value = false
 }
 </script>
 
@@ -83,5 +97,20 @@ const onWrong = async () => {
         </Suspense>
       </div>
     </Transition>
+
+    <!-- Skip button -->
+    <div class="mt-4 text-center">
+      <button @click="showSkipConfirm = true"
+              class="text-xs text-slate-500 hover:text-red-400 underline underline-offset-2 transition-colors">
+        {{ t('game.skip.btnStage2', { cost: game.SKIP_COST }) }}
+      </button>
+    </div>
+
+    <ConfirmModal
+      :is-open="showSkipConfirm"
+      :message="t('game.skip.confirmStage2', { cost: game.SKIP_COST })"
+      @confirm="confirmSkip"
+      @cancel="showSkipConfirm = false"
+    />
   </div>
 </template>

@@ -61,6 +61,7 @@ import {
   where,
   serverTimestamp,
   increment,
+  arrayUnion,
   runTransaction,
   writeBatch,
 } from 'firebase/firestore'
@@ -164,6 +165,21 @@ export const adjustPoints = async (pseudo, delta) => {
 }
 
 // Persist the in-checkpoint phase so players can resume exactly where they left off
+export const resetTeamProgress = async (pseudo, trackId) => {
+  await updateDoc(doc(db, 'teams', pseudo), {
+    currentCheckpointIndex: 0,
+    points: 0,
+    completedCheckpoints: [],
+    checkpointTimes: {},
+    isFinished: false,
+    currentPhase: 'envelope1',
+    savedQuestionIndex: 0,
+    trackId,
+    startedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+}
+
 export const saveTeamPhase = async (pseudo, phase, questionIndex = 0) => {
   await updateDoc(doc(db, 'teams', pseudo), {
     currentPhase: phase,
@@ -173,30 +189,18 @@ export const saveTeamPhase = async (pseudo, phase, questionIndex = 0) => {
 }
 
 export const updateTeamProgress = async (pseudo, checkpointId, { missionAnswer } = {}) => {
-  const ref = doc(db, 'teams', pseudo)
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref)
-    if (!snap.exists()) throw new Error('Team not found')
-    const data = snap.data()
-    const newIndex = data.currentCheckpointIndex + 1
-    const completedCheckpoints = [...(data.completedCheckpoints ?? []), checkpointId]
-    const checkpointTimes = {
-      ...data.checkpointTimes,
-      [checkpointId]: {
-        ...data.checkpointTimes?.[checkpointId],
-        completedAt: serverTimestamp(),
-        missionAnswer,
-      },
-    }
-    tx.update(ref, {
-      currentCheckpointIndex: newIndex,
-      completedCheckpoints,
-      checkpointTimes,
-      currentPhase: null,
-      savedQuestionIndex: 0,
-      updatedAt: serverTimestamp(),
-    })
-  })
+  const update = {
+    currentCheckpointIndex: increment(1),
+    completedCheckpoints: arrayUnion(checkpointId),
+    [`checkpointTimes.${checkpointId}.completedAt`]: serverTimestamp(),
+    currentPhase: null,
+    savedQuestionIndex: 0,
+    updatedAt: serverTimestamp(),
+  }
+  if (missionAnswer) {
+    update[`checkpointTimes.${checkpointId}.missionAnswer`] = missionAnswer
+  }
+  await updateDoc(doc(db, 'teams', pseudo), update)
 }
 
 export const startCheckpointTimer = async (pseudo, checkpointId) => {

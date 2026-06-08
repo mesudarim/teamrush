@@ -16,7 +16,8 @@ const admin = useAdminStore()
 const showForm = ref(false)
 const editingId = ref(null)
 const confirmDeleteId = ref(null)
-const saving = ref(false)
+const saving   = ref(false)
+const saveError = ref('')
 const imageFile = ref(null)
 const imagePreview = ref('')
 const puzzleImageBlob = ref(null)
@@ -219,7 +220,20 @@ const onImageChange = (e) => {
 }
 
 const saveCheckpoint = async () => {
+  saveError.value = ''
   if (!form.value.title.trim()) return
+
+  // MultipleChoice: every question must have at least one correct choice
+  if (form.value.missionType === 'MultipleChoice') {
+    const bad = form.value.missionConfig.questions.findIndex(
+      q => !q.choices?.some(c => c.isCorrect)
+    )
+    if (bad !== -1) {
+      saveError.value = t('admin.checkpoints.errorNoCorrectChoice', { n: bad + 1 })
+      return
+    }
+  }
+
   saving.value = true
   try {
     const payload = { ...form.value }
@@ -911,6 +925,14 @@ const stageModeLabel = (cp) => {
             </div>
           </div>
         </fieldset>
+
+        <!-- Validation error -->
+        <Transition name="feedback">
+          <div v-if="saveError"
+               class="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 text-sm font-semibold">
+            ⚠️ {{ saveError }}
+          </div>
+        </Transition>
 
         <!-- Actions -->
         <div class="flex gap-3 pt-2">

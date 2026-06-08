@@ -65,6 +65,9 @@ export const useGameStore = defineStore('game', () => {
     if (!authStore.trackId) return
     isLoading.value = true
     try {
+      // Fetch fresh team data before restoring phase, to avoid stale Firestore state
+      await authStore.refreshTeam()
+
       track.value = await getTrack(authStore.trackId)
       if (!track.value) throw new Error('Track not found')
 
@@ -89,8 +92,10 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
-  // Phases that can be safely restored (before checkpoint completion)
-  const RESTORABLE_PHASES = new Set(['stage1', 'bravo', 'envelope2', 'stage2'])
+  // Phases that can be safely restored.
+  // 'envelope2' intentionally excluded: if the session was interrupted there,
+  // the user restarts from envelope1 to avoid skipping verification.
+  const RESTORABLE_PHASES = new Set(['stage1', 'bravo', 'stage2'])
 
   const persistPhase = (p, qIdx = 0) => {
     if (authStore.pseudo) saveTeamPhase(authStore.pseudo, p, qIdx).catch(() => {})
@@ -166,10 +171,10 @@ export const useGameStore = defineStore('game', () => {
   }
 
   // Called per question attempt (correct or wrong)
-  const answerQuestion = async (isCorrect) => {
+  const answerQuestion = async (isCorrect, bonusPoints = 0) => {
     const cp = currentCheckpoint.value
     if (!cp || !authStore.pseudo) return
-    const pts = isCorrect ? (cp.pointsCorrect ?? 5) : -(cp.pointsWrong ?? 1)
+    const pts = isCorrect ? (cp.pointsCorrect ?? 5) + bonusPoints : -(cp.pointsWrong ?? 1)
     lastPointsDelta.value = pts
     pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
     checkpointDelta.value += pts
@@ -192,6 +197,30 @@ export const useGameStore = defineStore('game', () => {
     currentQuestionIndex.value = 0
     stage2Result.value = checkpointDelta.value >= 0 ? 'correct' : 'wrong'
     phase.value = 'result'
+  }
+
+  const SKIP_COST = 30
+
+  const applySkipCost = async () => {
+    pointsAnimation.value = { pts: -SKIP_COST, seq: pointsAnimation.value.seq + 1 }
+    await adjustPoints(authStore.pseudo, -SKIP_COST)
+  }
+
+  // Skip stage 1 → go directly to the mission (stage 2)
+  const skipStage1 = async () => {
+    if (!authStore.pseudo) return
+    await applySkipCost()
+    openEnvelope2()  // sets phase to 'stage2'
+  }
+
+  // Skip stage 2 → abandon mission, go to next checkpoint
+  const skipCheckpoint = async () => {
+    const cp = currentCheckpoint.value
+    if (!cp || !authStore.pseudo) return
+    await applySkipCost()
+    await updateTeamProgress(authStore.pseudo, cp.id)
+    currentQuestionIndex.value = 0
+    await advanceToNext()
   }
 
   const advanceToNext = async () => {
@@ -242,6 +271,6 @@ export const useGameStore = defineStore('game', () => {
     elapsedSeconds, timeBonus, currentIndex, totalPoints, isFinished, progress,
     loadTrack, loadCurrentCheckpoint, openEnvelope1, validateStage1,
     advanceToBravo, openEnvelope2, answerQuestion, advanceQuestion,
-    finishAllQuestions, advanceToNext, cleanup, formatTime,
+    finishAllQuestions, advanceToNext, skipStage1, skipCheckpoint, SKIP_COST, cleanup, formatTime,
   }
 })

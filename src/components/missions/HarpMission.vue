@@ -25,13 +25,13 @@ const STRINGS = [
 
 // SVG positions for each string (x, top attachment y, bottom y)
 const STRING_POS = [
-  { x: 70,  topY: 28, botY: 250 },
-  { x: 83,  topY: 23, botY: 250 },
-  { x: 97,  topY: 19, botY: 250 },
-  { x: 110, topY: 17, botY: 250 },
-  { x: 123, topY: 19, botY: 250 },
-  { x: 137, topY: 23, botY: 250 },
-  { x: 150, topY: 28, botY: 250 },
+  { x: 75,  topY: 27, botY: 250 },
+  { x: 104, topY: 21, botY: 250 },
+  { x: 132, topY: 17, botY: 250 },
+  { x: 160, topY: 16, botY: 250 },
+  { x: 188, topY: 17, botY: 250 },
+  { x: 216, topY: 21, botY: 250 },
+  { x: 245, topY: 27, botY: 250 },
 ]
 
 // 10-note melody: [C, E, G, D5, C5, A, G, E, D, C] (ascending + return)
@@ -149,11 +149,11 @@ const stringStyle = (idx) => {
 
 // Click rect boundaries (non-overlapping, midpoints between consecutive strings)
 const CLICK_ZONES = (() => {
-  const midpoints = [60]
+  const midpoints = [0]  // start from left edge of SVG
   for (let i = 0; i < STRING_POS.length - 1; i++) {
     midpoints.push(Math.round((STRING_POS[i].x + STRING_POS[i + 1].x) / 2))
   }
-  midpoints.push(160)
+  midpoints.push(320)   // end at right edge of SVG
   return STRING_POS.map((_, i) => ({ x: midpoints[i], width: midpoints[i + 1] - midpoints[i] }))
 })()
 
@@ -203,7 +203,7 @@ const progressFilled = computed(() => userSequence.value.length)
 
       <!-- ─── Harp SVG ──────────────────────────────────────────────────── -->
       <svg
-        viewBox="0 0 220 285"
+        viewBox="0 0 320 285"
         xmlns="http://www.w3.org/2000/svg"
         class="w-full max-w-[260px]"
         :class="gameState === 'playing' ? 'pointer-events-none' : 'cursor-pointer'"
@@ -218,36 +218,36 @@ const progressFilled = computed(() => userSequence.value.length)
 
         <!-- ── Frame ── -->
 
-        <!-- Left arm: curves from bottom-left up and outward, then inward to top-left -->
+        <!-- Left arm -->
         <path
-          d="M 65,252 C 28,212 12,148 34,84 C 46,50 63,30 70,27"
+          d="M 40,252 C 6,212 -2,148 20,84 C 32,50 52,30 72,27"
           stroke="#c9960a" stroke-width="9" fill="none" stroke-linecap="round"
         />
         <!-- Right arm -->
         <path
-          d="M 155,252 C 192,212 208,148 186,84 C 174,50 157,30 150,27"
+          d="M 280,252 C 314,212 322,148 300,84 C 288,50 268,30 248,27"
           stroke="#c9960a" stroke-width="9" fill="none" stroke-linecap="round"
         />
 
-        <!-- Top crosspiece ornament (arch connecting the two arm tips) -->
+        <!-- Top crosspiece ornament -->
         <path
-          d="M 70,27 C 82,16 98,13 110,13 C 122,13 138,16 150,27"
+          d="M 72,27 C 100,16 130,13 160,13 C 190,13 220,16 248,27"
           stroke="#c9960a" stroke-width="7" fill="none" stroke-linecap="round"
         />
-        <!-- Small decorative knobs at arm tips -->
-        <circle cx="70"  cy="27" r="5" fill="#c9960a"/>
-        <circle cx="150" cy="27" r="5" fill="#c9960a"/>
-        <!-- Crown tip at top -->
-        <circle cx="110" cy="12" r="4" fill="#d4a017"/>
+        <!-- Knobs at arm tips -->
+        <circle cx="72"  cy="27" r="5" fill="#c9960a"/>
+        <circle cx="248" cy="27" r="5" fill="#c9960a"/>
+        <!-- Crown tip -->
+        <circle cx="160" cy="12" r="4" fill="#d4a017"/>
 
-        <!-- Bottom soundboard body -->
+        <!-- Bottom soundboard -->
         <path
-          d="M 62,252 Q 110,272 158,252"
+          d="M 34,252 Q 160,272 286,252"
           stroke="#c9960a" stroke-width="11" fill="none" stroke-linecap="round"
         />
-        <!-- Inner soundboard lip -->
+        <!-- Inner lip -->
         <path
-          d="M 68,256 Q 110,274 152,256"
+          d="M 42,256 Q 160,275 278,256"
           stroke="#d4a017" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.45"
         />
 
