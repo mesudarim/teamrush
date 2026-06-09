@@ -129,17 +129,30 @@ export const findParticipantByIdentifier = async (query_) => {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
-export const createTeam = async (pseudo, trackId, displayName = '') => {
+// participant is the full participant document — used to copy pre-assigned routes on first login
+export const createTeam = async (pseudo, trackId, displayName = '', participant = null) => {
   const ref = doc(db, 'teams', pseudo)
   const existing = await getDoc(ref)
+
+  // Use participant's pre-assigned trackId if available
+  const resolvedTrackId = participant?.assignedTrackId ?? trackId
+
   if (existing.exists()) {
-    // Update name in case it changed since last login
-    await updateDoc(ref, { displayName, updatedAt: serverTimestamp() })
+    const updateData = { displayName, updatedAt: serverTimestamp() }
+    // Copy routes if team doesn't have them yet but participant does
+    if (participant?.day1Order?.length && !existing.data().day1Order?.length) {
+      updateData.day1Order = participant.day1Order
+      updateData.day2Order = participant.day2Order
+      updateData.day = participant.day ?? 1
+      updateData.trackId = resolvedTrackId
+    }
+    await updateDoc(ref, updateData)
     return pseudo
   }
-  await setDoc(ref, {
+
+  const teamData = {
     pseudo,
-    trackId,
+    trackId: resolvedTrackId,
     displayName,
     currentCheckpointIndex: 0,
     points: 0,
@@ -148,7 +161,15 @@ export const createTeam = async (pseudo, trackId, displayName = '') => {
     checkpointTimes: {},
     completedCheckpoints: [],
     isFinished: false,
-  })
+  }
+
+  if (participant?.day1Order?.length) {
+    teamData.day1Order = participant.day1Order
+    teamData.day2Order = participant.day2Order
+    teamData.day = participant.day ?? 1
+  }
+
+  await setDoc(ref, teamData)
   return pseudo
 }
 
@@ -230,6 +251,74 @@ export const subscribeToAllTeams = (callback) =>
     query(collection(db, 'teams'), orderBy('points', 'desc')),
     (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   )
+
+export const getAllTeams = async () => {
+  const snap = await getDocs(collection(db, 'teams'))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+// ─── Two-day system ───────────────────────────────────────────────────────────
+
+// Assign unique routes to participants (stored BEFORE login, copied to team on login)
+// assignments = [{ participantId, trackId, day1Order, day2Order }, ...]
+export const assignRoutesToParticipants = async (assignments) => {
+  const BATCH_SIZE = 400
+  for (let i = 0; i < assignments.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db)
+    assignments.slice(i, i + BATCH_SIZE).forEach(({ participantId, trackId, day1Order, day2Order }) => {
+      batch.update(doc(db, 'participants', participantId), {
+        day1Order,
+        day2Order,
+        assignedTrackId: trackId,
+        day: 1,
+        updatedAt: serverTimestamp(),
+      })
+    })
+    await batch.commit()
+  }
+}
+
+// Legacy alias kept for teams that already exist
+export const assignRoutes = assignRoutesToParticipants
+
+// Mark a team as having finished Day 1 (waiting for Day 2 activation)
+export const markDay1Complete = async (pseudo, timeBonusPoints = 0) => {
+  await updateDoc(doc(db, 'teams', pseudo), {
+    day1Finished: true,
+    day1BonusPoints: timeBonusPoints,
+    day1FinishedAt: serverTimestamp(),
+    points: increment(timeBonusPoints),
+    updatedAt: serverTimestamp(),
+  })
+}
+
+// Admin: activate Day 2 for all teams (archive Day 1 points, reset for Day 2)
+export const activateDay2 = async () => {
+  const snap = await getDocs(collection(db, 'teams'))
+  const teams = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+
+  const BATCH_SIZE = 400
+  for (let i = 0; i < teams.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db)
+    teams.slice(i, i + BATCH_SIZE).forEach((team) => {
+      batch.update(doc(db, 'teams', team.id), {
+        day: 2,
+        day1Points: team.points ?? 0,
+        points: 0,
+        currentCheckpointIndex: 0,
+        isFinished: false,
+        day1Finished: false,
+        currentPhase: null,
+        savedQuestionIndex: 0,
+        completedCheckpoints: [],
+        checkpointTimes: {},
+        startedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    })
+    await batch.commit()
+  }
+}
 
 // ─── Tracks ───────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getTrack, getCheckpoint, updateTeamProgress, startCheckpointTimer, markTeamFinished, subscribeToTeam, adjustPoints, saveTeamPhase } from '@/firebase/firestore'
+import { getTrack, getCheckpoint, updateTeamProgress, startCheckpointTimer, markTeamFinished, markDay1Complete, subscribeToTeam, adjustPoints, saveTeamPhase } from '@/firebase/firestore'
 import { useAuthStore } from './auth'
 
 export const useGameStore = defineStore('game', () => {
@@ -12,7 +12,7 @@ export const useGameStore = defineStore('game', () => {
   const isLoading = ref(false)
   const error = ref(null)
 
-  // Game phase: 'envelope1' | 'stage1' | 'bravo' | 'envelope2' | 'stage2' | 'result' | 'finished'
+  // Game phase: 'envelope1' | 'stage1' | 'bravo' | 'envelope2' | 'stage2' | 'result' | 'finished' | 'day1complete'
   const phase = ref('envelope1')
   const stage2Result = ref(null)
   const lastPointsDelta = ref(0)
@@ -71,7 +71,11 @@ export const useGameStore = defineStore('game', () => {
       track.value = await getTrack(authStore.trackId)
       if (!track.value) throw new Error('Track not found')
 
-      const cpIds = track.value.checkpointIds ?? []
+      // Two-day mode: use team's per-day ordered route if available
+      const team = authStore.team
+      const currentDay = team?.day ?? 1
+      const dayOrder = currentDay === 1 ? team?.day1Order : team?.day2Order
+      const cpIds = dayOrder?.length ? dayOrder : (track.value.checkpointIds ?? [])
       const loaded = await Promise.all(cpIds.map((id) => getCheckpoint(id)))
       checkpoints.value = loaded.filter(Boolean)
 
@@ -232,9 +236,17 @@ export const useGameStore = defineStore('game', () => {
         clearInterval(timerInterval)
         const bonus = Math.max(0, Math.round((TIME_BASE_SECONDS - elapsedSeconds.value) / 6))
         timeBonus.value = bonus
-        await markTeamFinished(authStore.pseudo, bonus)
-        await authStore.refreshTeam()
-        phase.value = 'finished'
+        const currentDay = authStore.team?.day ?? 1
+        if (currentDay === 1 && authStore.team?.day1Order?.length) {
+          // Two-day mode: Day 1 complete — wait for admin to activate Day 2
+          await markDay1Complete(authStore.pseudo, bonus)
+          await authStore.refreshTeam()
+          phase.value = 'day1complete'
+        } else {
+          await markTeamFinished(authStore.pseudo, bonus)
+          await authStore.refreshTeam()
+          phase.value = 'finished'
+        }
       } else {
         await loadCurrentCheckpoint()
       }

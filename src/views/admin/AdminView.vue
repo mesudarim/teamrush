@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterView, useRoute, useRouter } from 'vue-router'
@@ -25,6 +25,7 @@ const tabs = [
   { key: 'AdminTracks',      label: () => t('admin.tabs.tracks'),      icon: '🗺️',  path: '/admin/tracks' },
   { key: 'AdminCheckpoints', label: () => t('admin.tabs.checkpoints'), icon: '📍',  path: '/admin/checkpoints' },
   { key: 'AdminMonitor',     label: () => t('admin.tabs.monitor'),     icon: '📊',  path: '/admin/monitor' },
+  { key: 'AdminRoutes',      label: () => t('admin.tabs.routes'),      icon: '🗓️',  path: '/admin/routes' },
   { key: 'AdminSettings',    label: () => t('admin.tabs.settings'),    icon: '⚙️',  path: '/admin/settings' },
 ]
 
@@ -37,7 +38,9 @@ const isActive = (tab) => route.name === tab.key
     <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 sticky top-0 z-40">
       <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 bg-amber-500 rounded-xl flex items-center justify-center font-black text-slate-900 text-sm">TR</div>
+          <div class="w-9 h-9 bg-amber-500 rounded-xl flex items-center justify-center overflow-hidden">
+            <img src="@/assets/harpe.png" alt="logo" class="w-7 h-7 object-contain" style="mix-blend-mode: multiply;" />
+          </div>
           <div>
             <span class="font-black text-amber-400 text-lg">{{ t('app.name') }}</span>
             <span class="ms-2 text-xs text-slate-500">Admin</span>

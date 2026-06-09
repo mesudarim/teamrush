@@ -45,6 +45,7 @@ const routes = [
       { path: 'tracks',       name: 'AdminTracks',       component: () => import('@/views/admin/TracksTab.vue') },
       { path: 'checkpoints',  name: 'AdminCheckpoints',  component: () => import('@/views/admin/CheckpointsTab.vue') },
       { path: 'monitor',      name: 'AdminMonitor',      component: () => import('@/views/admin/MonitorTab.vue') },
+      { path: 'routes',       name: 'AdminRoutes',       component: () => import('@/views/admin/RoutesTab.vue') },
       { path: 'settings',     name: 'AdminSettings',     component: () => import('@/views/admin/SettingsTab.vue') },
     ],
   },

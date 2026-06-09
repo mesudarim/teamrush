@@ -13,6 +13,7 @@ import PhaseEnvelope2    from '@/components/game/PhaseEnvelope2.vue'
 import PhaseStage2       from '@/components/game/PhaseStage2.vue'
 import PhaseResult       from '@/components/game/PhaseResult.vue'
 import PhaseFinished     from '@/components/game/PhaseFinished.vue'
+import PhaseDay1Complete from '@/components/game/PhaseDay1Complete.vue'
 
 const { t } = useI18n()
 const game = useGameStore()
@@ -64,7 +65,8 @@ onUnmounted(() => {
           <PhaseEnvelope2    v-else-if="game.phase === 'envelope2'"  :key="'env2-' + game.currentIndex" />
           <PhaseStage2       v-else-if="game.phase === 'stage2'"    :key="'st2-' + game.currentIndex" />
           <PhaseResult       v-else-if="game.phase === 'result'"    :key="'res-' + game.currentIndex" />
-          <PhaseFinished     v-else-if="game.phase === 'finished'"  key="finished" />
+          <PhaseFinished     v-else-if="game.phase === 'finished'"     key="finished" />
+          <PhaseDay1Complete v-else-if="game.phase === 'day1complete'" key="day1complete" />
         </Transition>
       </template>
     </div>

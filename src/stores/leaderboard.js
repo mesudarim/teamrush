@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { subscribeToAllTeams, getTracks } from '@/firebase/firestore'
 
 export const useLeaderboardStore = defineStore('leaderboard', () => {
-  const teams = ref([])
+  const teams  = ref([])
   const tracks = ref([])
   let unsubscribe = null
 
@@ -13,13 +13,32 @@ export const useLeaderboardStore = defineStore('leaderboard', () => {
     return map
   })
 
+  // Whether any team is in Day 2 (signals 2-day mode is active)
+  const isTwoDay = computed(() => teams.value.some(t => t.day === 2 || t.day1Points != null))
+
+  // Points for the current day (what's shown in the daily leaderboard)
+  const currentDayPoints = (team) => team.points ?? 0
+
+  // Total points across both days
+  const totalPoints = (team) => (team.day1Points ?? 0) + (team.points ?? 0)
+
+  // Sort by current day points first, then time as tiebreaker
   const rankedTeams = computed(() =>
     [...teams.value].sort((a, b) => {
-      if (b.points !== a.points) return b.points - a.points
-      // Secondary sort: fewer seconds is better
-      const aTime = elapsedSecondsFor(a)
-      const bTime = elapsedSecondsFor(b)
-      return aTime - bTime
+      const aP = currentDayPoints(a)
+      const bP = currentDayPoints(b)
+      if (bP !== aP) return bP - aP
+      return elapsedSecondsFor(a) - elapsedSecondsFor(b)
+    })
+  )
+
+  // Sort by total (day1 + day2) for the overall leaderboard
+  const rankedTeamsTotal = computed(() =>
+    [...teams.value].sort((a, b) => {
+      const aT = totalPoints(a)
+      const bT = totalPoints(b)
+      if (bT !== aT) return bT - aT
+      return elapsedSecondsFor(a) - elapsedSecondsFor(b)
     })
   )
 
@@ -47,5 +66,11 @@ export const useLeaderboardStore = defineStore('leaderboard', () => {
 
   const cleanup = () => { unsubscribe?.() }
 
-  return { teams, tracks, trackMap, rankedTeams, elapsedSecondsFor, formatTime, subscribe, cleanup }
+  return {
+    teams, tracks, trackMap,
+    isTwoDay, currentDayPoints, totalPoints,
+    rankedTeams, rankedTeamsTotal,
+    elapsedSecondsFor, formatTime,
+    subscribe, cleanup,
+  }
 })

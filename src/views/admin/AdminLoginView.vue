@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -24,8 +24,8 @@ const signIn = async () => {
 
       <!-- Logo -->
       <div class="text-center">
-        <div class="w-20 h-20 mx-auto mb-4 rounded-3xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-2xl shadow-amber-500/30">
-          <span class="text-3xl font-black text-slate-900">TR</span>
+        <div class="w-20 h-20 mx-auto mb-4 rounded-3xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-2xl shadow-amber-500/30 overflow-hidden">
+          <img src="@/assets/harpe.png" alt="logo" class="w-16 h-16 object-contain" style="mix-blend-mode: multiply;" />
         </div>
         <h1 class="text-2xl font-black text-white">{{ t('app.name') }}</h1>
         <p class="text-slate-400 text-sm mt-1">{{ t('admin.adminLogin.subtitle') }}</p>

@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -29,7 +29,9 @@ const confirmExit = async () => {
     <div class="max-w-lg mx-auto flex items-center justify-between gap-3">
       <!-- Logo -->
       <div class="flex items-center gap-2">
-        <div class="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center font-black text-slate-900 text-sm">TR</div>
+        <div class="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center overflow-hidden">
+          <img src="@/assets/harpe.png" alt="logo" class="w-6 h-6 object-contain" style="mix-blend-mode: multiply;" />
+        </div>
         <span class="font-bold text-amber-400 text-lg hidden sm:block">{{ t('app.name') }}</span>
       </div>
 

@@ -26,7 +26,8 @@ export const useAuthStore = defineStore('auth', () => {
       participant.value = found
 
       // createTeam handles both new teams and returning players (updates displayName)
-      await createTeam(teamPseudo, trackId, found.name ?? '')
+      // Pass full participant so pre-assigned routes are copied to the team on first login
+      await createTeam(teamPseudo, trackId, found.name ?? '', found)
       team.value = await getTeam(teamPseudo)
 
       await updateParticipant(found.id, { loggedIn: true, teamId: teamPseudo, lastLoginAt: new Date() })

@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -36,7 +36,9 @@ const proceed = () => router.push({ name: 'Game' })
     <!-- Header -->
     <div class="flex justify-between items-center px-6 py-4">
       <div class="flex items-center gap-2">
-        <div class="w-9 h-9 bg-amber-500 rounded-xl flex items-center justify-center font-black text-slate-900">TR</div>
+        <div class="w-9 h-9 bg-amber-500 rounded-xl flex items-center justify-center overflow-hidden">
+          <img src="@/assets/harpe.png" alt="logo" class="w-7 h-7 object-contain" style="mix-blend-mode: multiply;" />
+        </div>
         <span class="font-black text-amber-400 text-xl hidden sm:block">{{ t('app.name') }}</span>
       </div>
       <div class="flex items-center gap-2">
