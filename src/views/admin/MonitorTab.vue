@@ -2,7 +2,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminStore } from '@/stores/admin'
-import { subscribeToPhotos, subscribeToAudioRecordings } from '@/firebase/firestore'
+import { subscribeToPhotos, subscribeToAudioRecordings, getParticipants, deleteTeam } from '@/firebase/firestore'
 
 const { t } = useI18n()
 const admin = useAdminStore()
@@ -10,6 +10,8 @@ const admin = useAdminStore()
 const photos = ref([])
 const lightbox = ref(null)
 const recordings = ref([])
+const cleaning = ref(false)
+const cleanMsg = ref('')
 let photosUnsubscribe = null
 let recordingsUnsubscribe = null
 
@@ -28,6 +30,25 @@ onUnmounted(() => {
   recordingsUnsubscribe?.()
 })
 
+const cleanOrphans = async () => {
+  cleaning.value = true
+  cleanMsg.value = ''
+  try {
+    const participants = await getParticipants()
+    const participantIds = new Set(participants.map(p => p.id))
+    const orphans = admin.teams.filter(t => !participantIds.has(t.id))
+    for (const team of orphans) {
+      await deleteTeam(team.id)
+    }
+    cleanMsg.value = orphans.length
+      ? `✅ ${orphans.length} équipe(s) supprimée(s)`
+      : '✅ Aucune équipe orpheline'
+    setTimeout(() => { cleanMsg.value = '' }, 3000)
+  } finally {
+    cleaning.value = false
+  }
+}
+
 const trackMap = computed(() => {
   const map = {}
   admin.tracks.forEach((tr) => { map[tr.id] = tr })
@@ -37,7 +58,14 @@ const trackMap = computed(() => {
 const trackCheckpointCount = (trackId) => trackMap.value[trackId]?.checkpointIds?.length ?? 0
 
 const sorted = computed(() =>
-  [...admin.teams].sort((a, b) => (b.points ?? 0) - (a.points ?? 0))
+  [...admin.teams].sort((a, b) => {
+    // Active (not finished) first
+    const aActive = a.isFinished ? 0 : 1
+    const bActive = b.isFinished ? 0 : 1
+    if (bActive !== aActive) return bActive - aActive
+    // Then by points descending
+    return (b.points ?? 0) - (a.points ?? 0)
+  })
 )
 
 const totalActive = computed(() => admin.teams.filter((t) => !t.isFinished).length)
@@ -56,13 +84,24 @@ const formatTime = (team) => {
 
 <template>
   <div>
-    <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
       <div>
         <h2 class="section-title">{{ t('admin.monitor.title') }}</h2>
         <div class="flex items-center gap-2 mt-1">
           <span class="pulse-dot" />
           <span class="text-xs text-slate-400">{{ t('leaderboard.live') }}</span>
         </div>
+      </div>
+      <div class="flex flex-col items-end gap-2">
+        <button
+          @click="cleanOrphans"
+          :disabled="cleaning"
+          class="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 opacity-70 hover:opacity-100"
+        >
+          <span v-if="cleaning" class="w-3 h-3 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
+          🧹 Nettoyer les équipes orphelines
+        </button>
+        <span v-if="cleanMsg" class="text-xs text-green-400">{{ cleanMsg }}</span>
       </div>
       <div class="flex gap-3 text-center">
         <div class="bg-slate-800 rounded-xl p-3 border border-slate-700">

@@ -27,7 +27,9 @@ let countInterval = null
 let coinInterval = null
 let coinId = 0
 
-const timeSaved = game.formatTime(Math.max(0, 3600 - game.elapsedSeconds))
+const parSeconds = (game.gameSettings?.timeBonusPar ?? 90) * 60
+const parMinutes = game.gameSettings?.timeBonusPar ?? 90
+const timeSaved = game.formatTime(Math.max(0, parSeconds - game.elapsedSeconds))
 
 const spawnCoin = () => {
   coins.value.push({
@@ -134,7 +136,9 @@ onUnmounted(() => {
           </div>
           <div class="bg-black px-4 py-4 text-center space-y-1">
             <p class="text-slate-400 text-xs">
-              {{ $i18n.locale === 'en' ? `${timeSaved} saved from 60 min` : `נחסכו ${timeSaved} מתוך 60 דקות` }}
+              {{ $i18n.locale === 'en'
+                ? `finished ${timeSaved} before the ${parMinutes} min par`
+                : `סיימתם ${timeSaved} לפני יעד ${parMinutes} דקות` }}
             </p>
             <div class="flex items-center justify-center gap-2">
               <span class="text-4xl font-black text-amber-400 tabular-nums">+{{ displayBonus }}</span>

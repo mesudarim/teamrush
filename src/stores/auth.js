@@ -55,6 +55,9 @@ export const useAuthStore = defineStore('auth', () => {
     if (team.value?.pseudo) {
       await resetTeamProgress(team.value.pseudo, team.value.trackId)
     }
+    if (participant.value?.id) {
+      await updateParticipant(participant.value.id, { loggedIn: false })
+    }
     logout()
   }
 

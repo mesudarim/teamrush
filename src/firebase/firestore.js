@@ -108,6 +108,10 @@ export const updateParticipant = async (id, data) => {
 
 export const deleteParticipant = async (id) => {
   await deleteDoc(doc(db, 'participants', id))
+  // Also remove the team document if it exists (team ID = participant ID)
+  const teamRef = doc(db, 'teams', id)
+  const teamSnap = await getDoc(teamRef)
+  if (teamSnap.exists()) await deleteDoc(teamRef)
 }
 
 export const subscribeToParticipants = (callback) =>
@@ -255,6 +259,10 @@ export const subscribeToAllTeams = (callback) =>
 export const getAllTeams = async () => {
   const snap = await getDocs(collection(db, 'teams'))
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+export const deleteTeam = async (id) => {
+  await deleteDoc(doc(db, 'teams', id))
 }
 
 // ─── Two-day system ───────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getTrack, getCheckpoint, updateTeamProgress, startCheckpointTimer, markTeamFinished, markDay1Complete, subscribeToTeam, adjustPoints, saveTeamPhase } from '@/firebase/firestore'
+import { getTrack, getCheckpoint, updateTeamProgress, startCheckpointTimer, markTeamFinished, markDay1Complete, subscribeToTeam, adjustPoints, saveTeamPhase, getSettings } from '@/firebase/firestore'
 import { useAuthStore } from './auth'
 
 export const useGameStore = defineStore('game', () => {
@@ -25,7 +25,7 @@ export const useGameStore = defineStore('game', () => {
   // Elapsed time tracking
   const elapsedSeconds = ref(0)
   const timeBonus = ref(0)
-  const TIME_BASE_SECONDS = 3600
+  const gameSettings = ref({})
   let timerInterval = null
   let teamUnsubscribe = null
 
@@ -62,20 +62,23 @@ export const useGameStore = defineStore('game', () => {
   const currentQuestion = computed(() => questions.value[currentQuestionIndex.value] ?? null)
 
   const loadTrack = async () => {
-    if (!authStore.trackId) return
     isLoading.value = true
     try {
       // Fetch fresh team data before restoring phase, to avoid stale Firestore state
       await authStore.refreshTeam()
 
-      track.value = await getTrack(authStore.trackId)
-      if (!track.value) throw new Error('Track not found')
+      gameSettings.value = await getSettings()
 
       // Two-day mode: use team's per-day ordered route if available
       const team = authStore.team
       const currentDay = team?.day ?? 1
       const dayOrder = currentDay === 1 ? team?.day1Order : team?.day2Order
-      const cpIds = dayOrder?.length ? dayOrder : (track.value.checkpointIds ?? [])
+
+      // Load track only if needed (may be absent in two-day route mode)
+      track.value = authStore.trackId ? await getTrack(authStore.trackId) : null
+
+      const cpIds = dayOrder?.length ? dayOrder : (track.value?.checkpointIds ?? [])
+      if (!cpIds.length) throw new Error('No checkpoints found')
       const loaded = await Promise.all(cpIds.map((id) => getCheckpoint(id)))
       checkpoints.value = loaded.filter(Boolean)
 
@@ -138,7 +141,7 @@ export const useGameStore = defineStore('game', () => {
     persistPhase('stage1')
   }
 
-  const validateStage1 = (input) => {
+  const validateStage1 = async (input) => {
     const cp = currentCheckpoint.value
     const clean = s => s.trim().toLowerCase()
     const inputClean = clean(input)
@@ -148,10 +151,20 @@ export const useGameStore = defineStore('game', () => {
     ].map(clean).filter(Boolean)
     const correct = allAnswers.includes(inputClean)
     if (correct) {
+      const pts = cp?.pointsCorrect ?? 5
+      checkpointDelta.value += pts
+      pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
+      await adjustPoints(authStore.pseudo, pts)
+      await authStore.refreshTeam()
       setTimeout(() => {
         phase.value = 'bravo'
         persistPhase('bravo')
       }, 600)
+    } else {
+      checkpointDelta.value -= 1
+      pointsAnimation.value = { pts: -1, seq: pointsAnimation.value.seq + 1 }
+      await adjustPoints(authStore.pseudo, -1)
+      await authStore.refreshTeam()
     }
     return correct
   }
@@ -234,7 +247,9 @@ export const useGameStore = defineStore('game', () => {
       const nextIndex = authStore.team?.currentCheckpointIndex ?? 0
       if (nextIndex >= checkpoints.value.length) {
         clearInterval(timerInterval)
-        const bonus = Math.max(0, Math.round((TIME_BASE_SECONDS - elapsedSeconds.value) / 6))
+        const parSeconds = (gameSettings.value.timeBonusPar ?? 90) * 60
+        const maxBonus   = gameSettings.value.timeBonusMax ?? 100
+        const bonus = Math.max(0, Math.round(maxBonus * (1 - elapsedSeconds.value / parSeconds)))
         timeBonus.value = bonus
         const currentDay = authStore.team?.day ?? 1
         if (currentDay === 1 && authStore.team?.day1Order?.length) {
@@ -280,7 +295,7 @@ export const useGameStore = defineStore('game', () => {
     track, checkpoints, currentCheckpoint, isLoading, error,
     phase, stage2Result, lastPointsDelta, checkpointDelta, pointsAnimation, awardBonus,
     questions, currentQuestion, currentQuestionIndex,
-    elapsedSeconds, timeBonus, currentIndex, totalPoints, isFinished, progress,
+    elapsedSeconds, timeBonus, gameSettings, currentIndex, totalPoints, isFinished, progress,
     loadTrack, loadCurrentCheckpoint, openEnvelope1, validateStage1,
     advanceToBravo, openEnvelope2, answerQuestion, advanceQuestion,
     finishAllQuestions, advanceToNext, skipStage1, skipCheckpoint, SKIP_COST, cleanup, formatTime,

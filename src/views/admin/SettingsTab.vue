@@ -6,7 +6,7 @@ import { useAdminStore } from '@/stores/admin'
 const { t } = useI18n()
 const admin = useAdminStore()
 
-const form = ref({ eventName: '', introVideoUrl: '', isEventLive: false })
+const form = ref({ eventName: '', introVideoUrl: '', introVideoUrlDay2: '', timeBonusMax: 100, timeBonusPar: 90, isEventLive: false })
 const saved = ref(false)
 const saving = ref(false)
 
@@ -41,9 +41,40 @@ const save = async () => {
       </div>
 
       <div>
-        <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.settings.introVideo') }}</label>
+        <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.settings.introVideoDay1') }}</label>
         <input v-model="form.introVideoUrl" class="input-field" placeholder="https://youtube.com/shorts/..." />
         <p class="text-xs text-slate-500 mt-1">YouTube Shorts, standard, or embed URL</p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.settings.introVideoDay2') }}</label>
+        <input v-model="form.introVideoUrlDay2" class="input-field" placeholder="https://youtube.com/shorts/..." />
+        <p class="text-xs text-slate-500 mt-1">YouTube Shorts, standard, or embed URL</p>
+      </div>
+
+      <!-- Time bonus config -->
+      <div class="p-4 bg-slate-900/50 rounded-xl border border-slate-700 space-y-3">
+        <div class="font-semibold text-slate-200 text-sm">⏱ {{ t('admin.settings.timeBonusTitle') }}</div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">{{ t('admin.settings.timeBonusMax') }}</label>
+            <input v-model.number="form.timeBonusMax" type="number" min="0" class="input-field text-center font-bold" placeholder="100" />
+            <p class="text-xs text-slate-500 mt-1">{{ t('admin.settings.timeBonusMaxHint') }}</p>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">{{ t('admin.settings.timeBonusPar') }}</label>
+            <input v-model.number="form.timeBonusPar" type="number" min="1" class="input-field text-center font-bold" placeholder="90" />
+            <p class="text-xs text-slate-500 mt-1">{{ t('admin.settings.timeBonusParHint') }}</p>
+          </div>
+        </div>
+        <p class="text-xs text-amber-400/80">
+          {{ t('admin.settings.timeBonusExample', {
+            half: Math.round(form.timeBonusMax * 0.5),
+            quarter: Math.round(form.timeBonusMax * 0.75),
+            par: form.timeBonusPar,
+            halfPar: Math.round(form.timeBonusPar / 2)
+          }) }}
+        </p>
       </div>
 
       <div class="flex items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-700">

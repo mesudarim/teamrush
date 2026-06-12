@@ -14,13 +14,17 @@ const auth = useAuthStore()
 const settings = ref({})
 const loading = ref(true)
 
-const youtubeEmbedUrl = computed(() => {
-  const url = settings.value.introVideoUrl
+const toEmbedUrl = (url) => {
   if (!url) return null
-  // Extract video ID from various YouTube URL formats
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([^&\n?#]+)/)
   if (!match) return null
   return `https://www.youtube.com/embed/${match[1]}?autoplay=1&rel=0&modestbranding=1`
+}
+
+const youtubeEmbedUrl = computed(() => {
+  const isDay2 = auth.team?.day === 2
+  const url = isDay2 ? (settings.value.introVideoUrlDay2 || settings.value.introVideoUrl) : settings.value.introVideoUrl
+  return toEmbedUrl(url)
 })
 
 onMounted(async () => {
@@ -39,10 +43,10 @@ const proceed = () => router.push({ name: 'Game' })
         <div class="w-9 h-9 bg-amber-500 rounded-xl flex items-center justify-center overflow-hidden">
           <img src="@/assets/harpe.png" alt="logo" class="w-7 h-7 object-contain" style="mix-blend-mode: multiply;" />
         </div>
-        <span class="font-black text-amber-400 text-xl hidden sm:block">{{ t('app.name') }}</span>
+        <span class="font-bold text-amber-400 text-xl hidden sm:block" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ t('app.name') }}</span>
       </div>
       <div class="flex items-center gap-2">
-        <span class="text-sm text-slate-400">{{ auth.pseudo }}</span>
+        <span class="text-sm text-slate-400">{{ auth.team?.displayName || auth.pseudo }}</span>
         <LanguageToggle />
       </div>
     </div>
@@ -54,7 +58,7 @@ const proceed = () => router.push({ name: 'Game' })
 
       <div v-else class="w-full max-w-2xl animate-fade-in">
         <div class="text-center mb-6">
-          <h1 class="text-2xl font-black text-white">{{ t('intro.title') }}</h1>
+          <h1 class="text-2xl font-bold text-white" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ t('intro.title') }}</h1>
           <p class="text-slate-400 text-sm mt-1">{{ t('intro.subtitle') }}</p>
         </div>
 

@@ -2,52 +2,67 @@
  * Generates unique checkpoint routes for each team using a coprime-step
  * circular-shift algorithm on the full checkpoint list.
  *
- * With M checkpoints and 8 coprime step families, supports up to M×8 unique routes.
- * For M=20 → 160 max unique routes (sufficient for up to 160 teams).
+ * Each team gets `checkpointsPerDay` checkpoints for Day 1 and the same
+ * for Day 2, drawn from the full pool without repetition within a team.
  *
- * Each route = full ordered list of M checkpoint IDs.
- *   day1Order = first  M/2 checkpoint IDs  (Day 1 route)
- *   day2Order = last   M/2 checkpoint IDs  (Day 2 route)
- *
- * At T=0, teams are spread across all M starting checkpoints (optimal dispatch).
- * Teams in different families diverge immediately after the first checkpoint.
+ * Coprime steps are computed dynamically for any pool size M.
+ * Unique-route capacity = M × (number of integers coprime to M, up to 8 families).
  */
 
-// Steps coprime to 20 — ordered for maximum route diversity
-const COPRIME_STEPS = [7, 9, 11, 13, 3, 17, 19, 1]
+function gcd(a, b) { return b === 0 ? a : gcd(b, a % b) }
+
+function getCoprimeFamilies(n, maxFamilies = 8) {
+  const steps = []
+  for (let s = 1; s < n && steps.length < maxFamilies; s++) {
+    if (gcd(s, n) === 1) steps.push(s)
+  }
+  return steps
+}
 
 /**
- * @param {string[]} checkpointIds  Ordered array of all checkpoint IDs (length M, M must be even)
- * @param {number}   numTeams       Number of teams to generate routes for
+ * @param {string[]} checkpointIds    All available checkpoint IDs (length M)
+ * @param {number}   numTeams         Number of teams to generate routes for
+ * @param {number}   checkpointsPerDay Checkpoints each team gets per day (Day1 + Day2 = 2×)
  * @returns {{ teamIndex: number, day1Order: string[], day2Order: string[] }[]}
  */
-export function generateRoutes(checkpointIds, numTeams) {
+export function generateRoutes(checkpointIds, numTeams, checkpointsPerDay) {
   const M = checkpointIds.length
-  if (M % 2 !== 0) throw new Error('checkpointIds length must be even')
+  const perTeam = checkpointsPerDay * 2
 
-  const maxTeams = M * COPRIME_STEPS.length
-  if (numTeams > maxTeams) {
-    throw new Error(`Cannot generate ${numTeams} unique routes from ${M} checkpoints (max ${maxTeams})`)
+  if (perTeam > M) {
+    throw new Error(
+      `checkpointsPerDay (${checkpointsPerDay}) × 2 = ${perTeam} exceeds total checkpoints (${M})`
+    )
   }
 
-  const half = M / 2
+  const families = getCoprimeFamilies(M)
+  const maxTeams = M * families.length
+  if (numTeams > maxTeams) {
+    throw new Error(
+      `Cannot generate ${numTeams} unique routes from ${M} checkpoints (max ${maxTeams})`
+    )
+  }
+
   const routes = []
 
   for (let i = 0; i < numTeams; i++) {
     const familyIdx = Math.floor(i / M)
     const offset    = i % M
-    const step      = COPRIME_STEPS[familyIdx]
+    const step      = families[familyIdx]
 
-    // Build the full 20-checkpoint sequence for this team
+    // Full circular permutation of all M checkpoints for this team
     const indices = []
     for (let k = 0; k < M; k++) {
       indices.push((offset + k * step) % M)
     }
 
+    // Take only the first `perTeam` slots, split evenly across the two days
+    const selected = indices.slice(0, perTeam).map(idx => checkpointIds[idx])
+
     routes.push({
       teamIndex: i,
-      day1Order: indices.slice(0, half).map(idx => checkpointIds[idx]),
-      day2Order: indices.slice(half).map(idx => checkpointIds[idx]),
+      day1Order: selected.slice(0, checkpointsPerDay),
+      day2Order: selected.slice(checkpointsPerDay),
     })
   }
 
@@ -56,10 +71,6 @@ export function generateRoutes(checkpointIds, numTeams) {
 
 /**
  * Returns a human-readable summary matrix for the admin table.
- * @param {object[]} routes         Output of generateRoutes()
- * @param {object[]} checkpoints    Array of checkpoint objects with { id, title }
- * @param {number}   day            1 or 2
- * @returns {{ teamIndex: number, checkpointNames: string[] }[]}
  */
 export function buildDisplayMatrix(routes, checkpoints, day) {
   const nameById = {}

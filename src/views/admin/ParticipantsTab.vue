@@ -25,14 +25,46 @@ onMounted(() => {
 })
 onUnmounted(() => unsubscribe?.())
 
+const sortCol = ref('status')  // default: active first
+const sortDir = ref('desc')
+
+function toggleSort(col) {
+  if (sortCol.value === col) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortCol.value = col
+    sortDir.value = col === 'status' ? 'desc' : 'asc'
+  }
+}
+
+function sortIcon(col) {
+  if (sortCol.value !== col) return '⇅'
+  return sortDir.value === 'asc' ? '↑' : '↓'
+}
+
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return participants.value
-  return participants.value.filter(p =>
-    p.name?.toLowerCase().includes(q) ||
-    p.email?.toLowerCase().includes(q) ||
-    p.phone?.includes(q)
-  )
+  const base = q
+    ? participants.value.filter(p =>
+        p.name?.toLowerCase().includes(q) ||
+        p.email?.toLowerCase().includes(q) ||
+        p.phone?.includes(q)
+      )
+    : [...participants.value]
+
+  return base.sort((a, b) => {
+    let cmp = 0
+    if (sortCol.value === 'name') {
+      cmp = (a.name ?? '').localeCompare(b.name ?? '')
+    } else if (sortCol.value === 'email') {
+      cmp = (a.email ?? '').localeCompare(b.email ?? '')
+    } else if (sortCol.value === 'phone') {
+      cmp = (a.phone ?? '').localeCompare(b.phone ?? '')
+    } else if (sortCol.value === 'status') {
+      cmp = (a.loggedIn ? 1 : 0) - (b.loggedIn ? 1 : 0)
+    }
+    return sortDir.value === 'asc' ? cmp : -cmp
+  })
 })
 
 const loggedInCount = computed(() => participants.value.filter(p => p.loggedIn).length)
@@ -193,10 +225,18 @@ Mike Ben-David, mike@example.com, +972501234567"
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wider">
-            <th class="text-start px-4 py-3 font-semibold">{{ t('admin.participants.colName') }}</th>
-            <th class="text-start px-4 py-3 font-semibold hidden sm:table-cell">{{ t('admin.participants.colEmail') }}</th>
-            <th class="text-start px-4 py-3 font-semibold hidden md:table-cell">{{ t('admin.participants.colPhone') }}</th>
-            <th class="text-center px-4 py-3 font-semibold">{{ t('admin.participants.colStatus') }}</th>
+            <th class="text-start px-4 py-3 font-semibold cursor-pointer hover:text-white select-none" @click="toggleSort('name')">
+              {{ t('admin.participants.colName') }} <span class="opacity-60">{{ sortIcon('name') }}</span>
+            </th>
+            <th class="text-start px-4 py-3 font-semibold hidden sm:table-cell cursor-pointer hover:text-white select-none" @click="toggleSort('email')">
+              {{ t('admin.participants.colEmail') }} <span class="opacity-60">{{ sortIcon('email') }}</span>
+            </th>
+            <th class="text-start px-4 py-3 font-semibold hidden md:table-cell cursor-pointer hover:text-white select-none" @click="toggleSort('phone')">
+              {{ t('admin.participants.colPhone') }} <span class="opacity-60">{{ sortIcon('phone') }}</span>
+            </th>
+            <th class="text-center px-4 py-3 font-semibold cursor-pointer hover:text-white select-none" @click="toggleSort('status')">
+              {{ t('admin.participants.colStatus') }} <span class="opacity-60">{{ sortIcon('status') }}</span>
+            </th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>

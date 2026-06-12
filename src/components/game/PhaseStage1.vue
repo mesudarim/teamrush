@@ -33,10 +33,10 @@ const confirmSkip = async () => {
   showSkipConfirm.value = false
 }
 
-const submit = (value = input.value) => {
+const submit = async (value = input.value) => {
   if (!value.trim() || (submitted.value && isCorrect.value)) return
   submitted.value = true
-  isCorrect.value = game.validateStage1(value)
+  isCorrect.value = await game.validateStage1(value)
   if (!isCorrect.value) {
     setTimeout(() => { submitted.value = false; input.value = '' }, 1800)
   }
