@@ -199,7 +199,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <BaseMission :checkpoint="checkpoint" :config="config" :instruction-override="instructionOverride">
+  <BaseMission :checkpoint="checkpoint" :config="config" :instruction-override="instructionOverride" :show-title="false">
     <div class="space-y-5">
 
       <!-- Success -->

@@ -37,10 +37,9 @@ const handleClick = () => {
         :class="[
           'relative cursor-pointer select-none w-full max-w-sm',
           'rounded-2xl overflow-hidden shadow-2xl',
-          state === 'idle'     ? 'animate-env-float' :
-          animType === 'flip'  ? 'animate-env-flip'  :
-          animType === 'burst' ? 'animate-env-burst'  :
-                                 'animate-env-flyup',
+          state === 'spinning' && animType === 'flip'  ? 'animate-env-flip'  :
+          state === 'spinning' && animType === 'burst' ? 'animate-env-burst' :
+          state === 'spinning' && animType === 'flyup' ? 'animate-env-flyup' : '',
         ]"
         style="aspect-ratio: 1.9 / 1;"
       >
@@ -69,9 +68,8 @@ const handleClick = () => {
           </span>
         </div>
 
-        <!-- Shine overlay on idle -->
-        <div v-if="state === 'idle'"
-             class="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none rounded-2xl" />
+        <!-- Shine sweep on idle -->
+        <div v-if="state === 'idle'" class="shine-sweep pointer-events-none" />
       </div>
     </Transition>
 
@@ -91,12 +89,25 @@ const handleClick = () => {
 </template>
 
 <style scoped>
-/* ── Idle float ── */
-@keyframes env-float {
-  0%, 100% { transform: translateY(0px) rotate(-1deg); }
-  50%       { transform: translateY(-12px) rotate(1deg); }
+/* ── Idle shine sweep ── */
+.shine-sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 75%
+  );
+  transform: translateX(-160%);
+  animation: shine-move 3s ease-in-out infinite;
 }
-.animate-env-float { animation: env-float 3s ease-in-out infinite; }
+
+@keyframes shine-move {
+  0%    { transform: translateX(-160%); }
+  35%   { transform: translateX(160%); }
+  100%  { transform: translateX(160%); }
+}
 
 /* ── Option 1 : Flip (retournement sur l'axe Y) ── */
 @keyframes env-flip {

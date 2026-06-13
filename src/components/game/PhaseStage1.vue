@@ -22,6 +22,7 @@ const stage1ImageUrl = computed(() => cp.value?.stage1ImageUrl ?? '')
 const input = ref('')
 const submitted = ref(false)
 const isCorrect = ref(false)
+const checking = ref(false)
 const showScanner = ref(false)
 const showSkipConfirm = ref(false)
 const skipping = ref(false)
@@ -34,9 +35,11 @@ const confirmSkip = async () => {
 }
 
 const submit = async (value = input.value) => {
-  if (!value.trim() || (submitted.value && isCorrect.value)) return
-  submitted.value = true
+  if (!value.trim() || (submitted.value && isCorrect.value) || checking.value) return
+  checking.value = true
   isCorrect.value = await game.validateStage1(value)
+  checking.value = false
+  submitted.value = true
   if (!isCorrect.value) {
     setTimeout(() => { submitted.value = false; input.value = '' }, 1800)
   }
@@ -86,7 +89,7 @@ const onQrDecoded = (value) => {
             {{ isCorrect ? t('game.stage1.correct') : t('game.stage1.wrong') }}
           </div>
         </Transition>
-        <button @click="submit()" :disabled="!input.trim() || (submitted && isCorrect)" class="btn-primary w-full">
+        <button @click="submit()" :disabled="!input.trim() || (submitted && isCorrect) || checking" class="btn-primary w-full">
           {{ t('game.stage1.submit') }}
         </button>
       </div>
@@ -113,7 +116,7 @@ const onQrDecoded = (value) => {
           </div>
         </Transition>
 
-        <button @click="submit()" :disabled="!input.trim() || (submitted && isCorrect)" class="btn-primary w-full">
+        <button @click="submit()" :disabled="!input.trim() || (submitted && isCorrect) || checking" class="btn-primary w-full">
           {{ t('game.stage1.submit') }}
         </button>
       </div>

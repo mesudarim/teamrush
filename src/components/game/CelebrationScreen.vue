@@ -42,7 +42,7 @@ onMounted(() => {
     </div>
 
     <button @click="game.advanceToBravo()" class="btn-primary px-8 py-3">
-      {{ t('game.bravo.continueBtn') }} →
+      {{ t('game.bravo.continueBtn') }}
     </button>
 
     <!-- Auto-advance hint -->

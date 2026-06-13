@@ -14,15 +14,12 @@ const emit = defineEmits(['correct', 'wrong'])
 
 // ─── Compass ────────────────────────────────────────────────────────────────
 
-const heading = ref(null)
-const needsPermission = ref(false)
+const heading     = ref(null)  // displayed degrees 0-360 (for readout text)
+const cssRotation = ref(0)     // accumulated rotation for CSS (no 359→1 wrap artifact)
+const needsPermission    = ref(false)
 const compassUnavailable = ref(false)
 
-// Rotate the compass FACE by -heading so N always points to physical North
-// The fixed amber triangle at the top indicates where the phone is pointing
-const faceRotation = computed(() =>
-  heading.value !== null ? -heading.value : 0
-)
+const faceRotation = computed(() => heading.value !== null ? -cssRotation.value : 0)
 
 const cardinal = computed(() => {
   if (heading.value === null) return ''
@@ -30,39 +27,78 @@ const cardinal = computed(() => {
   return dirs[Math.round(heading.value / 45) % 8]
 })
 
-// Tick marks: 36 ticks every 10°, longer at 45° multiples
-const ticks = Array.from({ length: 36 }, (_, i) => {
-  const deg = i * 10
-  const isCardinal = deg % 90 === 0
-  const isIntercardinal = deg % 45 === 0
-  const rad = (deg * Math.PI) / 180
-  const r1 = isCardinal ? 78 : isIntercardinal ? 80 : 84
-  const r2 = 92
-  return {
-    x1: 100 + r1 * Math.sin(rad),
-    y1: 100 - r1 * Math.cos(rad),
-    x2: 100 + r2 * Math.sin(rad),
-    y2: 100 - r2 * Math.cos(rad),
-    isCardinal,
-    isIntercardinal,
-    isNorth: deg === 0,
+// Circular mean of a buffer of angles — correctly handles the 359°/0° boundary
+const circularMean = (angles) => {
+  let sinSum = 0, cosSum = 0
+  for (const a of angles) {
+    const r = (a * Math.PI) / 180
+    sinSum += Math.sin(r)
+    cosSum += Math.cos(r)
   }
-})
+  return ((Math.atan2(sinSum, cosSum) * 180) / Math.PI + 360) % 360
+}
 
-const handleOrientation = (e) => {
-  // iOS: webkitCompassHeading is true compass heading (0=North)
+const BUFFER_SIZE = 6   // rolling window of raw readings for the mean
+const MIN_CHANGE  = 2   // degrees — skip redraw below this threshold (kills micro-jitter)
+const THROTTLE_MS = 40  // ~25 fps cap
+
+let hasAbsolute = false
+let lastTick    = 0
+let prevMean    = null
+const rawBuffer = []
+
+const applyRaw = (raw) => {
+  const now = Date.now()
+  if (now - lastTick < THROTTLE_MS) return
+  lastTick = now
+
+  rawBuffer.push(raw)
+  if (rawBuffer.length > BUFFER_SIZE) rawBuffer.shift()
+
+  const mean = circularMean(rawBuffer)
+
+  // First reading — initialise without transition
+  if (prevMean === null) {
+    prevMean = mean
+    cssRotation.value = mean
+    heading.value = Math.round(mean)
+    return
+  }
+
+  // Shortest-arc delta so the CSS transition never spins the wrong way
+  let delta = mean - prevMean
+  if (delta > 180)  delta -= 360
+  if (delta < -180) delta += 360
+
+  if (Math.abs(delta) < MIN_CHANGE) return  // nothing meaningful changed
+
+  cssRotation.value += delta
+  prevMean = mean
+  heading.value = Math.round(((mean + 360) % 360))
+}
+
+// Separate handlers: absolute source wins, fallback ignored once absolute fires
+const handleAbsolute = (e) => {
+  hasAbsolute = true
   if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0) {
-    heading.value = Math.round(e.webkitCompassHeading)
-  } else if (e.alpha !== null) {
-    // Android / others: alpha is degrees from North counterclockwise
-    // For absolute events this gives true heading; non-absolute gives arbitrary heading
-    heading.value = Math.round((360 - e.alpha) % 360)
+    applyRaw(e.webkitCompassHeading)
+  } else if (e.alpha != null) {
+    applyRaw((360 - e.alpha + 360) % 360)
+  }
+}
+
+const handleFallback = (e) => {
+  if (hasAbsolute) return
+  if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0) {
+    applyRaw(e.webkitCompassHeading)
+  } else if (e.alpha != null) {
+    applyRaw((360 - e.alpha + 360) % 360)
   }
 }
 
 const startListening = () => {
-  window.addEventListener('deviceorientationabsolute', handleOrientation, true)
-  window.addEventListener('deviceorientation', handleOrientation, true)
+  window.addEventListener('deviceorientationabsolute', handleAbsolute, true)
+  window.addEventListener('deviceorientation', handleFallback, true)
 }
 
 const requestCompassPermission = async () => {
@@ -84,7 +120,6 @@ onMounted(() => {
     return
   }
   if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-    // iOS 13+ requires explicit user gesture
     needsPermission.value = true
   } else {
     startListening()
@@ -92,8 +127,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('deviceorientationabsolute', handleOrientation, true)
-  window.removeEventListener('deviceorientation', handleOrientation, true)
+  window.removeEventListener('deviceorientationabsolute', handleAbsolute, true)
+  window.removeEventListener('deviceorientation', handleFallback, true)
 })
 
 // ─── Answer ────────────────────────────────────────────────────────────────
@@ -142,12 +177,15 @@ const submit = () => {
 </script>
 
 <template>
-  <BaseMission :checkpoint="checkpoint" :config="config">
+  <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
     <div class="space-y-5">
 
       <!-- Question text -->
-      <div v-if="questionText" class="bg-slate-900/60 rounded-xl px-4 py-3 border border-slate-700 text-center">
-        <p class="text-white font-bold text-base leading-snug">{{ questionText }}</p>
+      <div v-if="questionText" class="bg-slate-900/60 rounded-xl px-5 py-4 border border-slate-700 text-center">
+        <p class="text-white font-bold text-2xl leading-snug"
+           style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
+          {{ questionText }}
+        </p>
       </div>
 
       <!-- Compass -->
@@ -176,7 +214,7 @@ const submit = () => {
               <circle cx="100" cy="100" r="96" fill="#0f172a" stroke="#334155" stroke-width="2"/>
 
               <!-- Rotating compass face -->
-              <g :transform="`rotate(${faceRotation}, 100, 100)`" style="transition: transform 0.1s linear;">
+              <g :transform="`rotate(${faceRotation}, 100, 100)`" style="transition: transform 0.25s ease-out;">
 
                 <!-- Tick marks -->
                 <line

@@ -57,19 +57,20 @@ const trackMap = computed(() => {
 
 const trackCheckpointCount = (trackId) => trackMap.value[trackId]?.checkpointIds?.length ?? 0
 
+// Priority: active (0) > day1Finished waiting (1) > fully finished (2)
+const teamPriority = (t) => t.isFinished ? 2 : t.day1Finished ? 1 : 0
+
 const sorted = computed(() =>
   [...admin.teams].sort((a, b) => {
-    // Active (not finished) first
-    const aActive = a.isFinished ? 0 : 1
-    const bActive = b.isFinished ? 0 : 1
-    if (bActive !== aActive) return bActive - aActive
-    // Then by points descending
+    const pa = teamPriority(a), pb = teamPriority(b)
+    if (pa !== pb) return pa - pb
     return (b.points ?? 0) - (a.points ?? 0)
   })
 )
 
-const totalActive = computed(() => admin.teams.filter((t) => !t.isFinished).length)
-const totalFinished = computed(() => admin.teams.filter((t) => t.isFinished).length)
+const totalActive    = computed(() => admin.teams.filter((t) => !t.isFinished && !t.day1Finished).length)
+const totalDay1Done  = computed(() => admin.teams.filter((t) => t.day1Finished && !t.isFinished).length)
+const totalFinished  = computed(() => admin.teams.filter((t) => t.isFinished).length)
 
 const formatTime = (team) => {
   const start = team.startedAt?.toDate?.()
@@ -103,17 +104,21 @@ const formatTime = (team) => {
         </button>
         <span v-if="cleanMsg" class="text-xs text-green-400">{{ cleanMsg }}</span>
       </div>
-      <div class="flex gap-3 text-center">
+      <div class="flex gap-3 text-center flex-wrap">
         <div class="bg-slate-800 rounded-xl p-3 border border-slate-700">
           <div class="text-2xl font-black text-white">{{ admin.teams.length }}</div>
           <div class="text-xs text-slate-400">Total</div>
         </div>
-        <div class="bg-slate-800 rounded-xl p-3 border border-green-500/30">
-          <div class="text-2xl font-black text-green-400">{{ totalActive }}</div>
+        <div class="bg-slate-800 rounded-xl p-3 border border-blue-500/30">
+          <div class="text-2xl font-black text-blue-400">{{ totalActive }}</div>
           <div class="text-xs text-slate-400">{{ t('admin.monitor.active') }}</div>
         </div>
-        <div class="bg-slate-800 rounded-xl p-3 border border-amber-500/30">
-          <div class="text-2xl font-black text-amber-400">{{ totalFinished }}</div>
+        <div class="bg-slate-800 rounded-xl p-3 border border-orange-500/30">
+          <div class="text-2xl font-black text-orange-400">{{ totalDay1Done }}</div>
+          <div class="text-xs text-slate-400">{{ t('admin.monitor.day1done') }}</div>
+        </div>
+        <div class="bg-slate-800 rounded-xl p-3 border border-green-500/30">
+          <div class="text-2xl font-black text-green-400">{{ totalFinished }}</div>
           <div class="text-xs text-slate-400">{{ t('admin.monitor.finished') }}</div>
         </div>
       </div>
@@ -137,7 +142,12 @@ const formatTime = (team) => {
           <tr
             v-for="(team, idx) in sorted"
             :key="team.id"
-            class="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors"
+            :class="[
+              'border-b border-slate-700/50 transition-colors',
+              team.day1Finished && !team.isFinished
+                ? 'bg-orange-950/20 hover:bg-orange-950/30'
+                : 'hover:bg-slate-700/30'
+            ]"
           >
             <td class="px-4 py-3 text-slate-500 font-bold">{{ idx + 1 }}</td>
             <td class="px-4 py-3">
@@ -159,8 +169,22 @@ const formatTime = (team) => {
               {{ formatTime(team) }}
             </td>
             <td class="px-4 py-3 text-center">
-              <span :class="team.isFinished ? 'badge-green' : 'badge-blue'">
-                {{ team.isFinished ? t('admin.monitor.finished') : t('admin.monitor.active') }}
+              <span
+                :class="
+                  team.isFinished
+                    ? 'badge-green'
+                    : team.day1Finished
+                      ? 'badge-orange'
+                      : 'badge-blue'
+                "
+              >
+                {{
+                  team.isFinished
+                    ? t('admin.monitor.finished')
+                    : team.day1Finished
+                      ? t('admin.monitor.day1done')
+                      : t('admin.monitor.active')
+                }}
               </span>
             </td>
           </tr>

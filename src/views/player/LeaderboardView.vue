@@ -11,19 +11,22 @@ const router = useRouter()
 const lb   = useLeaderboardStore()
 const auth = useAuthStore()
 
-const showTotal = ref(false)
+// 'day1' | 'day2' | 'total'
+const activeTab = ref('day1')
 
-const displayedTeams = computed(() =>
-  showTotal.value ? lb.rankedTeamsTotal : lb.rankedTeams
-)
-
-const pointsFor = (team) =>
-  showTotal.value ? lb.totalPoints(team) : lb.currentDayPoints(team)
-
-const currentDayLabel = computed(() => {
-  const day = lb.teams.find(t => t.pseudo === auth.pseudo)?.day ?? 1
-  return day === 2 ? t('leaderboard.day2') : t('leaderboard.day1')
+const displayedTeams = computed(() => {
+  if (!lb.isTwoDay) return lb.rankedTeams
+  if (activeTab.value === 'day2')  return lb.rankedTeamsDay2
+  if (activeTab.value === 'total') return lb.rankedTeamsTotal
+  return lb.rankedTeamsDay1
 })
+
+const pointsFor = (team) => {
+  if (!lb.isTwoDay) return lb.currentDayPoints(team)
+  if (activeTab.value === 'day2')  return lb.day2PointsFor(team)
+  if (activeTab.value === 'total') return lb.totalPoints(team)
+  return lb.day1PointsFor(team)
+}
 
 onMounted(() => lb.subscribe())
 onUnmounted(() => lb.cleanup())
@@ -61,21 +64,20 @@ onUnmounted(() => lb.cleanup())
         <div class="badge-amber">{{ lb.teams.length }} {{ t('admin.monitor.total') }}</div>
       </div>
 
-      <!-- Day toggle (only in 2-day mode) -->
-      <div v-if="lb.isTwoDay" class="flex gap-2 mb-4">
+      <!-- Day tabs (only in 2-day mode) -->
+      <div v-if="lb.isTwoDay" class="flex gap-1.5 mb-4 bg-slate-800 p-1 rounded-2xl">
         <button
-          @click="showTotal = false"
-          :class="['flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
-            !showTotal ? 'bg-amber-500 text-slate-900' : 'bg-slate-800 text-slate-300 hover:bg-slate-700']"
+          v-for="tab in ['day1', 'day2', 'total']"
+          :key="tab"
+          @click="activeTab = tab"
+          :class="[
+            'flex-1 py-2 rounded-xl text-sm font-semibold transition-all',
+            activeTab === tab
+              ? 'bg-amber-500 text-slate-900 shadow-sm'
+              : 'text-slate-400 hover:text-slate-200'
+          ]"
         >
-          {{ currentDayLabel }}
-        </button>
-        <button
-          @click="showTotal = true"
-          :class="['flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
-            showTotal ? 'bg-amber-500 text-slate-900' : 'bg-slate-800 text-slate-300 hover:bg-slate-700']"
-        >
-          {{ t('leaderboard.total') }}
+          {{ tab === 'day1' ? t('leaderboard.day1') : tab === 'day2' ? t('leaderboard.day2') : t('leaderboard.total') }}
         </button>
       </div>
 
@@ -113,24 +115,28 @@ onUnmounted(() => lb.cleanup())
 
           <!-- Team info -->
           <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
               <span class="font-bold text-white truncate"
                     style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
                 {{ team.displayName || team.pseudo }}
               </span>
               <span v-if="team.pseudo === auth.pseudo" class="badge-amber text-xs">{{ t('leaderboard.team') }}</span>
               <span v-if="team.isFinished" class="badge-green text-xs">{{ t('leaderboard.finished') }}</span>
-              <span v-if="team.day === 2" class="badge-blue text-xs">J2</span>
+              <span v-else-if="team.day1Finished" class="badge-orange text-xs">{{ t('leaderboard.day1') }} ✓</span>
+              <span v-else-if="team.day === 2" class="badge-blue text-xs">{{ t('leaderboard.day2') }}</span>
             </div>
-            <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-              <span>{{ lb.trackMap[team.trackId]?.name ?? team.trackId }}</span>
-              <span>·</span>
+            <!-- Sub-label: breakdown in total view -->
+            <div v-if="activeTab === 'total' && lb.isTwoDay" class="flex items-center gap-2 text-xs mt-0.5">
+              <span class="text-slate-500">
+                J1: <span class="text-slate-300">{{ lb.day1PointsFor(team) }}</span>
+              </span>
+              <span class="text-slate-600">+</span>
+              <span class="text-slate-500">
+                J2: <span class="text-slate-300">{{ lb.day2PointsFor(team) }}</span>
+              </span>
+            </div>
+            <div v-else class="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
               <span>{{ t('leaderboard.checkpoint') }} {{ (team.currentCheckpointIndex ?? 0) }}</span>
-              <!-- Day 1 points sub-label in total view -->
-              <template v-if="showTotal && team.day1Points">
-                <span>·</span>
-                <span class="text-slate-500">J1: {{ team.day1Points }}</span>
-              </template>
             </div>
           </div>
 

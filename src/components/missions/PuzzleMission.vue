@@ -92,7 +92,7 @@ const movesOverHalf = computed(() => count.value > MAX_MOVES * 0.75)
 </script>
 
 <template>
-  <BaseMission :checkpoint="checkpoint" :config="config">
+  <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
     <div class="space-y-4" style="direction: ltr;">
 
       <!-- Instruction -->

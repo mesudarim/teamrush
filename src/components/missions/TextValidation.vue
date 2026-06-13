@@ -151,7 +151,7 @@ const submit = async () => {
 </script>
 
 <template>
-  <BaseMission :checkpoint="checkpoint" :config="config">
+  <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
     <div class="space-y-4">
 
       <!-- ── Pre-start screen (timed missions only) ── -->
@@ -165,7 +165,7 @@ const submit = async () => {
           <div class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-base">
             ⏳ {{ totalDisplay }}
           </div>
-          <button @click="startMission" class="btn-primary w-full py-4 text-base font-black">
+          <button @click="startMission" class="btn-primary w-full py-4 text-base font-bold" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
             {{ t('missions.textValidation.startBtn') }}
           </button>
         </div>
@@ -218,12 +218,12 @@ const submit = async () => {
 
       <!-- Input (hidden once solved) -->
       <template v-else-if="!solved">
-        <textarea
+        <input
           v-model="answer"
-          rows="3"
-          class="input-field resize-none"
+          type="text"
+          class="input-field"
           :placeholder="t('missions.textValidation.placeholder')"
-          @keyup.ctrl.enter="submit"
+          @keyup.enter="submit"
         />
 
         <Transition name="feedback">
@@ -234,14 +234,9 @@ const submit = async () => {
           </div>
         </Transition>
 
-        <div class="flex items-center gap-3">
-          <button @click="submit" :disabled="!answer.trim()" class="btn-primary flex-1">
-            {{ t('missions.textValidation.submit') }}
-          </button>
-          <span v-if="wrongAttempts > 0" class="text-red-400 text-xs font-semibold whitespace-nowrap">
-            −{{ wrongAttempts * (checkpoint.pointsWrong ?? 1) }} pts
-          </span>
-        </div>
+        <button @click="submit" :disabled="!answer.trim()" class="btn-primary w-full">
+          {{ t('missions.textValidation.submit') }}
+        </button>
       </template>
 
         </div><!-- end active mission div -->

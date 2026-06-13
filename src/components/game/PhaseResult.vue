@@ -7,7 +7,8 @@ const { t } = useI18n()
 const game = useGameStore()
 
 const correct = computed(() => game.stage2Result === 'correct')
-const points = computed(() => Math.abs(game.lastPointsDelta))
+// checkpointDelta = total earned this checkpoint (stage 1 arrival + stage 2 mission)
+const points = computed(() => Math.abs(game.checkpointDelta))
 </script>
 
 <template>
@@ -27,14 +28,13 @@ const points = computed(() => Math.abs(game.lastPointsDelta))
         <!-- Message -->
         <div>
           <h2
-            :class="['text-2xl font-bold mb-2', correct ? 'text-green-400' : 'text-red-400']"
+            :class="['text-2xl font-bold', correct ? 'text-green-400' : 'text-red-400']"
             style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;"
           >
             {{ correct
               ? t('game.stage2.correct', { points })
               : t('game.stage2.wrong', { points }) }}
           </h2>
-          <p class="text-slate-400 text-sm">{{ t('game.points') }}: {{ game.totalPoints }}</p>
         </div>
 
         <!-- Next button -->

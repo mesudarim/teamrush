@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseMission from './BaseMission.vue'
 
-const { locale } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
@@ -45,7 +45,7 @@ const handleChoice = (idx) => {
 </script>
 
 <template>
-  <BaseMission :checkpoint="checkpoint" :config="config">
+  <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
     <div class="space-y-3">
 
       <!-- Question text -->
@@ -89,8 +89,7 @@ const handleChoice = (idx) => {
       <Transition name="feedback">
         <div v-if="wrongIndices.size > 0 && !solved"
              class="text-center text-red-400 text-xs font-semibold py-1">
-          {{ wrongIndices.size }} mauvaise{{ wrongIndices.size > 1 ? 's' : '' }} réponse{{ wrongIndices.size > 1 ? 's' : '' }}
-          · −{{ wrongIndices.size * (checkpoint.pointsWrong ?? 50) }} pts
+          {{ t('missions.multipleChoice.wrongCount', { n: wrongIndices.size, pts: wrongIndices.size * (checkpoint.pointsWrong ?? 1) }) }}
         </div>
       </Transition>
     </div>

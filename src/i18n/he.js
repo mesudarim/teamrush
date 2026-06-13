@@ -47,7 +47,7 @@ export default {
     stage1: {
       title: 'הוכחת הגעה',
       instruction: 'הזינו את מילת הסיסמה שמצאתם במקום',
-      placeholder: 'מילת הסיסמה...',
+      placeholder: 'תשובתכם...',
       submit: 'אמת',
       wrong: 'מילה שגויה. נסו שוב!',
       correct: 'כל הכבוד! הגעתם למקום הנכון!',
@@ -257,6 +257,7 @@ export default {
       elapsed: 'זמן',
       status: 'סטטוס',
       active: 'פעיל',
+      day1done: 'יום 1 ✓',
       finished: 'סיים',
       refreshing: 'מתעדכן...',
       total: 'סה"כ צוותים',
@@ -347,6 +348,7 @@ export default {
     multipleChoice: {
       title: 'בחרו את התשובה הנכונה',
       submit: 'שלחו',
+      wrongCount: '{n} תשובה שגויה · ‎−{pts} נק׳',
     },
     photoCapture: {
       cameraBtn: 'צלמו תמונה',

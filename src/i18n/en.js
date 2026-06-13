@@ -47,7 +47,7 @@ export default {
     stage1: {
       title: 'Arrival Proof',
       instruction: 'Enter the keyword you found at the location',
-      placeholder: 'The keyword...',
+      placeholder: 'Your answer...',
       submit: 'Verify',
       wrong: 'Wrong keyword. Try again!',
       correct: "Great job! You're in the right place!",
@@ -257,6 +257,7 @@ export default {
       elapsed: 'Elapsed',
       status: 'Status',
       active: 'Active',
+      day1done: 'Day 1 ✓',
       finished: 'Finished',
       refreshing: 'Refreshing...',
       total: 'Total Teams',
@@ -347,6 +348,7 @@ export default {
     multipleChoice: {
       title: 'Choose the correct answer',
       submit: 'Submit',
+      wrongCount: '{n} wrong answer · ‎−{pts} pts',
     },
     photoCapture: {
       cameraBtn: 'Take a photo',
@@ -385,7 +387,7 @@ export default {
       statusIdle: 'Tap any string to hear it, then press the button to start',
       statusPlaying: 'Listen to the melody...',
       statusRepeat: 'Now replay the same melody!',
-      playPiece: 'Play the piece',
+      playPiece: 'Play the melody',
       replay: 'Hear again',
       wrongNote: 'Wrong note — starting over!',
     },

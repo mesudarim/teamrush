@@ -91,7 +91,7 @@ const confirmPhoto = async () => {
 </script>
 
 <template>
-  <BaseMission :checkpoint="checkpoint" :config="config">
+  <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
     <div class="space-y-4">
 
       <!-- Preview -->

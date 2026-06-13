@@ -15,6 +15,7 @@ const props = defineProps({
   submitted: { type: Boolean, default: false },
   correct: { type: Boolean, default: null },
   instructionOverride: { type: String, default: null },
+  showTitle: { type: Boolean, default: true },
 })
 
 const instruction = computed(() => {
@@ -31,7 +32,7 @@ import { computed } from 'vue'
   <div class="card space-y-5">
     <!-- Mission header -->
     <div class="text-center">
-      <div class="badge-amber mb-2">{{ t('game.envelope2.title') }}</div>
+      <div v-if="showTitle" class="badge-amber mb-2">{{ t('game.envelope2.title') }}</div>
       <p v-if="instruction" class="text-slate-200 text-base leading-relaxed font-medium">{{ instruction }}</p>
     </div>
 

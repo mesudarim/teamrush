@@ -158,9 +158,9 @@ const CLICK_ZONES = (() => {
 })()
 
 const statusMsg = computed(() => {
-  if (gameState.value === 'idle')      return t('harp.statusIdle')
-  if (gameState.value === 'playing')   return t('harp.statusPlaying')
-  if (gameState.value === 'repeating') return t('harp.statusRepeat')
+  if (gameState.value === 'idle')      return t('missions.harp.statusIdle')
+  if (gameState.value === 'playing')   return t('missions.harp.statusPlaying')
+  if (gameState.value === 'repeating') return t('missions.harp.statusRepeat')
   return ''
 })
 
@@ -168,7 +168,7 @@ const progressFilled = computed(() => userSequence.value.length)
 </script>
 
 <template>
-  <BaseMission :checkpoint="checkpoint" :config="config">
+  <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
     <div class="flex flex-col items-center gap-5 select-none">
 
       <!-- Status message -->
@@ -197,7 +197,7 @@ const progressFilled = computed(() => userSequence.value.length)
       <Transition name="fade">
         <div v-if="wrongIdx !== -1"
              class="text-red-400 text-xs font-bold tracking-wide">
-          {{ t('harp.wrongNote') }}
+          {{ t('missions.harp.wrongNote') }}
         </div>
       </Transition>
 
@@ -284,7 +284,7 @@ const progressFilled = computed(() => userSequence.value.length)
           class="btn-primary w-full max-w-[220px] py-3 text-sm font-bold flex items-center justify-center gap-2"
         >
           <span class="text-lg">🎵</span>
-          {{ t('harp.playPiece') }}
+          {{ t('missions.harp.playPiece') }}
         </button>
       </Transition>
 
@@ -295,7 +295,7 @@ const progressFilled = computed(() => userSequence.value.length)
           @click="playMelody"
           class="btn-secondary py-2 px-4 text-xs font-semibold flex items-center gap-1.5"
         >
-          <span>🔁</span> {{ t('harp.replay') }}
+          <span>🔁</span> {{ t('missions.harp.replay') }}
         </button>
       </Transition>
 
