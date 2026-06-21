@@ -24,8 +24,8 @@ const signIn = async () => {
 
       <!-- Logo -->
       <div class="text-center">
-        <div class="w-20 h-20 mx-auto mb-4 rounded-3xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-2xl shadow-amber-500/30 overflow-hidden">
-          <img src="@/assets/harpe.png" alt="logo" class="w-16 h-16 object-contain" style="mix-blend-mode: multiply;" />
+        <div class="w-24 h-24 mx-auto mb-4 rounded-full overflow-hidden shadow-2xl">
+          <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-cover" />
         </div>
         <h1 class="text-2xl font-black text-white">{{ t('app.name') }}</h1>
         <p class="text-slate-400 text-sm mt-1">{{ t('admin.adminLogin.subtitle') }}</p>

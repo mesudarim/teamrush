@@ -25,7 +25,7 @@ const submit = async () => {
 
   const ok = await auth.login(identifier.value.trim(), '')
   if (ok) {
-    router.push({ name: 'Intro' })
+    router.push({ name: 'Intro', state: { settings: JSON.stringify(settings.value) } })
   } else if (auth.error === 'NOT_ON_LIST') {
     formError.value = t('login.notOnList')
   } else {
@@ -39,8 +39,8 @@ const submit = async () => {
     <!-- Header -->
     <div class="flex justify-between items-center px-6 py-4">
       <div class="flex items-center gap-2">
-        <div class="w-9 h-9 bg-amber-500 rounded-xl flex items-center justify-center overflow-hidden">
-          <img src="@/assets/harpe.png" alt="logo" class="w-7 h-7 object-contain" style="mix-blend-mode: multiply;" />
+        <div class="w-10 h-10 rounded-full overflow-hidden shrink-0">
+          <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-cover" />
         </div>
         <span class="font-bold text-amber-400 text-xl" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ t('app.name') }}</span>
       </div>
@@ -50,9 +50,11 @@ const submit = async () => {
     <!-- Hero -->
     <div class="flex-1 flex flex-col items-center justify-center px-4 py-8">
       <div class="mb-8 text-center animate-fade-in">
-        <div class="w-24 h-24 mx-auto mb-4 rounded-3xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-2xl shadow-amber-500/30 overflow-hidden">
-          <img src="@/assets/harpe.png" alt="logo" class="w-20 h-20 object-contain" style="mix-blend-mode: multiply;" />
-        </div>
+        <!-- ISA logo -->
+        <img src="@/assets/Logo_israel_securities_authority.png"
+             alt="Israel Securities Authority"
+             class="mx-auto mb-5"
+             style="max-width: 220px; height: auto;" />
         <h1 class="text-3xl font-bold text-white mb-1"
             style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
           {{ t('login.title') }}
@@ -69,12 +71,13 @@ const submit = async () => {
             <label class="block text-sm font-semibold text-slate-300 mb-2">{{ t('login.identifierLabel') }}</label>
             <input
               v-model="identifier"
-              type="text"
+              type="tel"
+              inputmode="numeric"
               class="input-field text-lg font-semibold"
               :placeholder="t('login.identifierPlaceholder')"
               @keyup.enter="submit"
-              maxlength="80"
-              autocomplete="name"
+              maxlength="20"
+              autocomplete="tel"
             />
           </div>
 
@@ -106,6 +109,14 @@ const submit = async () => {
           <RouterLink to="/admin" class="text-xs text-slate-600 hover:text-slate-400 transition-colors">Admin</RouterLink>
         </div>
       </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center py-4">
+      <a href="https://eifoany.web.app/" target="_blank" rel="noopener noreferrer"
+         class="text-sm text-slate-500 hover:text-slate-300 transition-colors">
+        by eifoany
+      </a>
     </div>
   </div>
 </template>

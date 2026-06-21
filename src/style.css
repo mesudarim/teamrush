@@ -13,11 +13,14 @@
   }
 
   html, body {
-    direction: rtl;
     font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif !important;
   }
 
-  html[lang="en"] {
+  html[dir="rtl"], html[dir="rtl"] body {
+    direction: rtl;
+  }
+
+  html[dir="ltr"], html[dir="ltr"] body {
     direction: ltr;
   }
 

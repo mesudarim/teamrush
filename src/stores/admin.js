@@ -5,6 +5,7 @@ import {
   createCheckpoint, updateCheckpoint, deleteCheckpoint,
   createTrack, updateTrack, deleteTrack,
   getSettings, updateSettings,
+  resetAllTeams,
 } from '@/firebase/firestore'
 import { uploadMapImage, uploadPuzzleImage, uploadStage1Image } from '@/firebase/storage'
 
@@ -97,6 +98,10 @@ export const useAdminStore = defineStore('admin', () => {
     settings.value = { ...settings.value, ...data }
   }
 
+  const resetAll = async () => {
+    await resetAllTeams()
+  }
+
   const cleanup = () => {
     unsubs.forEach((u) => u())
     unsubs = []
@@ -104,6 +109,6 @@ export const useAdminStore = defineStore('admin', () => {
 
   return {
     checkpoints, tracks, teams, settings, isLoading,
-    init, saveCheckpoint, removeCheckpoint, saveTrack, removeTrack, saveSettings, cleanup,
+    init, saveCheckpoint, removeCheckpoint, saveTrack, removeTrack, saveSettings, resetAll, cleanup,
   }
 })

@@ -1,6 +1,6 @@
 <!--
   PuzzleCropper — drag the box to move, drag corners to resize (stays square).
-  Output: 500×500 JPEG blob.
+  Output: 400×400 JPEG blob.
   Emits: confirm(blob)  cancel()
 -->
 <script setup>
@@ -12,7 +12,7 @@ const props = defineProps({ src: { type: String, required: true } })
 const emit  = defineEmits(['confirm', 'cancel'])
 
 const DISPLAY_MAX = 380
-const OUTPUT_SIZE = 500
+const OUTPUT_SIZE = 400
 const MIN_CROP    = 60   // minimum selection size in natural pixels
 
 // ── Image dimensions ──────────────────────────────────────────────────────────

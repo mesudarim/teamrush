@@ -17,6 +17,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/pre-launch',
+    name: 'PreLaunch',
+    component: () => import('@/views/player/PreLaunchView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/game',
     name: 'Game',
     component: () => import('@/views/player/GameView.vue'),

@@ -2,7 +2,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminStore } from '@/stores/admin'
-import { subscribeToPhotos, subscribeToAudioRecordings, getParticipants, deleteTeam } from '@/firebase/firestore'
+import { subscribeToPhotos, subscribeToAudioRecordings } from '@/firebase/firestore'
 
 const { t } = useI18n()
 const admin = useAdminStore()
@@ -10,8 +10,6 @@ const admin = useAdminStore()
 const photos = ref([])
 const lightbox = ref(null)
 const recordings = ref([])
-const cleaning = ref(false)
-const cleanMsg = ref('')
 let photosUnsubscribe = null
 let recordingsUnsubscribe = null
 
@@ -30,24 +28,6 @@ onUnmounted(() => {
   recordingsUnsubscribe?.()
 })
 
-const cleanOrphans = async () => {
-  cleaning.value = true
-  cleanMsg.value = ''
-  try {
-    const participants = await getParticipants()
-    const participantIds = new Set(participants.map(p => p.id))
-    const orphans = admin.teams.filter(t => !participantIds.has(t.id))
-    for (const team of orphans) {
-      await deleteTeam(team.id)
-    }
-    cleanMsg.value = orphans.length
-      ? `✅ ${orphans.length} équipe(s) supprimée(s)`
-      : '✅ Aucune équipe orpheline'
-    setTimeout(() => { cleanMsg.value = '' }, 3000)
-  } finally {
-    cleaning.value = false
-  }
-}
 
 const trackMap = computed(() => {
   const map = {}
@@ -92,17 +72,6 @@ const formatTime = (team) => {
           <span class="pulse-dot" />
           <span class="text-xs text-slate-400">{{ t('leaderboard.live') }}</span>
         </div>
-      </div>
-      <div class="flex flex-col items-end gap-2">
-        <button
-          @click="cleanOrphans"
-          :disabled="cleaning"
-          class="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 opacity-70 hover:opacity-100"
-        >
-          <span v-if="cleaning" class="w-3 h-3 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
-          🧹 Nettoyer les équipes orphelines
-        </button>
-        <span v-if="cleanMsg" class="text-xs text-green-400">{{ cleanMsg }}</span>
       </div>
       <div class="flex gap-3 text-center flex-wrap">
         <div class="bg-slate-800 rounded-xl p-3 border border-slate-700">

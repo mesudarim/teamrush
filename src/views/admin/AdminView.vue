@@ -38,8 +38,8 @@ const isActive = (tab) => route.name === tab.key
     <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 sticky top-0 z-40">
       <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 bg-amber-500 rounded-xl flex items-center justify-center overflow-hidden">
-            <img src="@/assets/harpe.png" alt="logo" class="w-7 h-7 object-contain" style="mix-blend-mode: multiply;" />
+          <div class="w-10 h-10 rounded-full overflow-hidden shrink-0">
+            <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-cover" />
           </div>
           <div>
             <span class="font-black text-amber-400 text-lg">{{ t('app.name') }}</span>
@@ -69,7 +69,7 @@ const isActive = (tab) => route.name === tab.key
     </header>
 
     <!-- Tab bar -->
-    <nav class="bg-slate-800/50 border-b border-slate-700/50 px-4 sticky top-[61px] z-30">
+    <nav class="bg-slate-800 border-b border-slate-700 px-4 sticky top-[61px] z-30">
       <div class="max-w-7xl mx-auto flex gap-1 overflow-x-auto">
         <button
           v-for="tab in tabs"

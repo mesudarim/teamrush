@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminStore } from '@/stores/admin'
 import ConfirmModal from '@/components/ui/ConfirmModal.vue'
@@ -47,7 +47,7 @@ function emptyForm() {
     showMap: false,
     mapImageUrl: '',
     mapLat: '', mapLng: '', mapZoom: 15,
-    envelopeBrand: 'מרוץ הנבל',
+    envelopeBrand: 'המרוץ לצפון',
     envelope1Label: 'יעד',
     envelope2Label: 'משימה',
     stage1Mode: 'text',
@@ -55,6 +55,8 @@ function emptyForm() {
     stage1InstructionEn: '',
     stage1Keyword: '',
     stage1KeywordEn: '',
+    stage1Keywords: [],
+    stage1MultiOrdered: false,
     stage1ImageUrl: '',
     missionType: 'MultipleChoice',
     missionConfig: {
@@ -67,7 +69,7 @@ function emptyForm() {
   }
 }
 
-const missionTypes = ['TextValidation', 'MultipleChoice', 'MissingWord', 'PhotoCapture', 'CompassMission', 'PuzzleMission', 'AudioRecorder', 'HarpMission']
+const missionTypes = ['TextValidation', 'QrScanMission', 'MultipleChoice', 'MissingWord', 'PhotoCapture', 'CompassMission', 'PuzzleMission', 'AudioRecorder', 'HarpMission']
 
 // ─── Puzzle image ────────────────────────────────────────────────────────────
 
@@ -277,10 +279,50 @@ const setCorrect = (qIdx, cIdx) => {
 const viewMode = ref(localStorage.getItem('cp_view') ?? 'card')
 const setView = (v) => { viewMode.value = v; localStorage.setItem('cp_view', v) }
 
+// ── Sorting ───────────────────────────────────────────────────────────────────
+const sortCol = ref('')   // '' | 'title' | 'stage1Mode' | 'missionType'
+const sortDir = ref('asc')
+
+const toggleSort = (col) => {
+  if (sortCol.value === col) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortCol.value = col
+    sortDir.value = 'asc'
+  }
+}
+
+const sortedCheckpoints = computed(() => {
+  if (!sortCol.value) return admin.checkpoints
+  return [...admin.checkpoints].sort((a, b) => {
+    let va = '', vb = ''
+    if (sortCol.value === 'title')       { va = a.title ?? '';        vb = b.title ?? '' }
+    if (sortCol.value === 'stage1Mode')  { va = a.stage1Mode ?? 'text'; vb = b.stage1Mode ?? 'text' }
+    if (sortCol.value === 'missionType') { va = a.missionType ?? '';  vb = b.missionType ?? '' }
+    const cmp = va.localeCompare(vb, undefined, { sensitivity: 'base' })
+    return sortDir.value === 'asc' ? cmp : -cmp
+  })
+})
+
+// ── Checkpoint navigation (while form is open) ────────────────────────────────
+const currentEditIndex = computed(() =>
+  editingId.value ? sortedCheckpoints.value.findIndex(cp => cp.id === editingId.value) : -1
+)
+const prevCheckpoint = computed(() =>
+  currentEditIndex.value > 0 ? sortedCheckpoints.value[currentEditIndex.value - 1] : null
+)
+const nextCheckpoint = computed(() =>
+  currentEditIndex.value >= 0 && currentEditIndex.value < sortedCheckpoints.value.length - 1
+    ? sortedCheckpoints.value[currentEditIndex.value + 1]
+    : null
+)
+const navigateTo = (cp) => { if (cp) startEdit(cp) }
+
 const stageModeLabel = (cp) => {
   const mode = cp.stage1Mode ?? 'text'
   if (mode === 'qr')          return t('game.stage1.modeQr')
   if (mode === 'missingWord') return t('game.stage1.modeMissingWord')
+  if (mode === 'multiField')  return t('game.stage1.modeMultiField')
   return t('game.stage1.modeText')
 }
 </script>
@@ -319,9 +361,27 @@ const stageModeLabel = (cp) => {
     </div>
 
     <!-- ── CARD VIEW ── -->
-    <div v-if="!showForm && viewMode === 'card'" class="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+    <div v-if="!showForm && viewMode === 'card'">
+      <!-- Sort bar -->
+      <div class="flex flex-wrap items-center gap-2 mb-3 text-xs text-slate-400">
+        <span class="font-semibold">Trier :</span>
+        <button
+          v-for="col in [['title', t('admin.checkpoints.sectionName')], ['stage1Mode', t('admin.checkpoints.sectionVerification')], ['missionType', t('admin.checkpoints.sectionMission')]]"
+          :key="col[0]"
+          @click="toggleSort(col[0])"
+          :class="['flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-colors',
+            sortCol === col[0]
+              ? 'border-amber-500/60 bg-amber-500/10 text-amber-400'
+              : 'border-slate-600 bg-slate-800 hover:border-slate-500']"
+        >
+          {{ col[1] }}
+          <span v-if="sortCol === col[0]">{{ sortDir === 'asc' ? '↑' : '↓' }}</span>
+        </button>
+        <button v-if="sortCol" @click="sortCol = ''" class="px-2 py-1 rounded-lg border border-slate-700 hover:border-slate-500 text-slate-500 hover:text-slate-300 transition-colors">✕</button>
+      </div>
+      <div class="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
       <div
-        v-for="cp in admin.checkpoints"
+        v-for="cp in sortedCheckpoints"
         :key="cp.id"
         class="card hover:border-amber-500/30 transition-colors space-y-2"
       >
@@ -349,6 +409,7 @@ const stageModeLabel = (cp) => {
         </div>
       </div>
     </div>
+    </div>
 
     <!-- ── LIST VIEW ── -->
     <div v-if="!showForm && viewMode === 'list'" class="mb-6 rounded-xl border border-slate-700 overflow-hidden">
@@ -356,15 +417,30 @@ const stageModeLabel = (cp) => {
         <thead>
           <tr class="bg-slate-800 border-b border-slate-700 text-[10px] font-black text-slate-400 uppercase tracking-widest">
             <th class="px-4 py-2.5 text-start">#</th>
-            <th class="px-4 py-2.5 text-start">{{ t('admin.checkpoints.sectionName') }}</th>
-            <th class="px-4 py-2.5 text-start hidden md:table-cell">{{ t('admin.checkpoints.sectionVerification') }}</th>
-            <th class="px-4 py-2.5 text-start hidden md:table-cell">{{ t('admin.checkpoints.sectionMission') }}</th>
+            <th class="px-4 py-2.5 text-start cursor-pointer select-none hover:text-amber-400 transition-colors" @click="toggleSort('title')">
+              <span class="flex items-center gap-1">
+                {{ t('admin.checkpoints.sectionName') }}
+                <span :class="sortCol === 'title' ? 'text-amber-400' : 'text-slate-600'">{{ sortCol === 'title' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </span>
+            </th>
+            <th class="px-4 py-2.5 text-start hidden md:table-cell cursor-pointer select-none hover:text-amber-400 transition-colors" @click="toggleSort('stage1Mode')">
+              <span class="flex items-center gap-1">
+                {{ t('admin.checkpoints.sectionVerification') }}
+                <span :class="sortCol === 'stage1Mode' ? 'text-amber-400' : 'text-slate-600'">{{ sortCol === 'stage1Mode' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </span>
+            </th>
+            <th class="px-4 py-2.5 text-start hidden md:table-cell cursor-pointer select-none hover:text-amber-400 transition-colors" @click="toggleSort('missionType')">
+              <span class="flex items-center gap-1">
+                {{ t('admin.checkpoints.sectionMission') }}
+                <span :class="sortCol === 'missionType' ? 'text-amber-400' : 'text-slate-600'">{{ sortCol === 'missionType' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </span>
+            </th>
             <th class="px-4 py-2.5 text-end"></th>
           </tr>
         </thead>
         <tbody>
           <tr
-            v-for="(cp, idx) in admin.checkpoints"
+            v-for="(cp, idx) in sortedCheckpoints"
             :key="cp.id"
             class="border-b border-slate-700/50 last:border-0 hover:bg-slate-800/40 transition-colors"
           >
@@ -402,6 +478,31 @@ const stageModeLabel = (cp) => {
             {{ editingId ? t('admin.checkpoints.edit') : t('admin.checkpoints.create') }}
           </h3>
           <button @click="cancelForm" class="btn-ghost">✕</button>
+        </div>
+
+        <!-- Checkpoint navigation arrows (edit mode only) -->
+        <div v-if="editingId" class="flex items-center justify-between gap-3 px-1 py-1 rounded-xl bg-slate-800/60 border border-slate-700">
+          <button
+            @click="navigateTo(prevCheckpoint)"
+            :disabled="!prevCheckpoint"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700 text-slate-300"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            <span class="hidden sm:inline truncate max-w-[120px]">{{ prevCheckpoint?.title ?? '' }}</span>
+            <span class="sm:hidden">Préc.</span>
+          </button>
+          <span class="text-xs text-slate-500 tabular-nums shrink-0">
+            {{ currentEditIndex + 1 }} / {{ sortedCheckpoints.length }}
+          </span>
+          <button
+            @click="navigateTo(nextCheckpoint)"
+            :disabled="!nextCheckpoint"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700 text-slate-300"
+          >
+            <span class="hidden sm:inline truncate max-w-[120px]">{{ nextCheckpoint?.title ?? '' }}</span>
+            <span class="sm:hidden">Suiv.</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+          </button>
         </div>
 
         <!-- ── NOM ── -->
@@ -502,7 +603,7 @@ const stageModeLabel = (cp) => {
           <div class="grid md:grid-cols-3 gap-4">
             <div>
               <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.envelopeBrand') }}</label>
-              <input v-model="form.envelopeBrand" class="input-field text-center font-mono tracking-widest" placeholder="מרוץ הנבל" />
+              <input v-model="form.envelopeBrand" class="input-field text-center font-mono tracking-widest" placeholder="המרוץ לצפון" />
             </div>
             <div>
               <label class="block text-sm font-semibold text-amber-400 mb-1">{{ t('admin.checkpoints.envelope1Label') }}</label>
@@ -516,19 +617,30 @@ const stageModeLabel = (cp) => {
           <!-- Live preview -->
           <div class="flex gap-4 justify-center">
             <div v-for="(lbl, i) in [form.envelope1Label || 'יעד', form.envelope2Label || 'משימה']" :key="i"
-                 class="rounded-xl overflow-hidden shadow-lg border border-amber-500/30 flex-1 max-w-[160px]"
+                 class="rounded-xl overflow-hidden shadow-xl flex-1 max-w-[180px]"
                  style="aspect-ratio: 1.9 / 1; position: relative;">
-              <div class="absolute top-0 left-0 right-0 bg-amber-400" style="height:18%;" />
-              <div class="absolute left-0 right-0 bg-black flex flex-col items-center justify-center gap-0.5"
-                   style="top:18%; bottom:22%;">
-                <span class="text-amber-400/70 font-bold uppercase tracking-widest text-center"
-                      style="font-size:0.4rem;">{{ form.envelopeBrand || 'מרוץ הנבל' }}</span>
-                <span class="text-amber-400 font-black leading-none text-center"
-                      style="font-size:1.1rem;">{{ lbl }}</span>
-              </div>
-              <div class="absolute bottom-0 left-0 right-0 bg-amber-400 flex items-center justify-center"
-                   style="height:22%;">
-                <span class="text-black font-black" style="font-size:0.4rem;">◄ ◄ ◄ &nbsp; ► ► ►</span>
+              <!-- Blue gradient bg -->
+              <div class="absolute inset-0" style="background: radial-gradient(ellipse at 50% 35%, #3d72d8 0%, #1e4dbf 35%, #0e2e90 65%, #071a60 100%);" />
+              <!-- Top gold band -->
+              <div class="absolute top-0 left-0 right-0 z-10" style="height:15%; background: linear-gradient(180deg,#ffe84d 0%,#f5a500 55%,#e09000 100%);" />
+              <!-- Bottom gold band -->
+              <div class="absolute bottom-0 left-0 right-0 z-10" style="height:15%; background: linear-gradient(0deg,#ffe84d 0%,#f5a500 55%,#e09000 100%);" />
+              <!-- Content -->
+              <div class="absolute z-20 flex flex-col items-center justify-between w-full" style="top:15%; bottom:15%; padding:2% 4%;">
+                <!-- Big label -->
+                <div class="flex flex-1 items-center justify-center">
+                  <span style="font-family:'Rubik','Arial Black',Arial,sans-serif; font-weight:900; font-size:1.2rem; color:#ffe033; line-height:1; text-shadow:0 2px 0 rgba(100,50,0,0.6),0 4px 8px rgba(0,0,0,0.5);">
+                    {{ lbl }}
+                  </span>
+                </div>
+                <!-- Badge: white outer hexagon + red inner hexagon -->
+                <div style="background:#fff; clip-path:polygon(9px 0%,calc(100% - 9px) 0%,100% 50%,calc(100% - 9px) 100%,9px 100%,0% 50%); padding:2px; margin-bottom:2%;">
+                  <div style="background:#cc0010; clip-path:polygon(7px 0%,calc(100% - 7px) 0%,100% 50%,calc(100% - 7px) 100%,7px 100%,0% 50%); padding:2px 10px; display:flex; align-items:center; justify-content:center; min-width:50px;">
+                    <span style="font-family:'Rubik','Arial Black',Arial,sans-serif; font-weight:900; font-size:0.38rem; color:#fff; letter-spacing:0.08em; white-space:nowrap;">
+                      {{ form.envelopeBrand || 'המרוץ לצפון' }}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -538,20 +650,21 @@ const stageModeLabel = (cp) => {
         <fieldset class="space-y-4">
           <legend class="text-sm font-bold text-amber-400 uppercase tracking-wider mb-3">{{ t('admin.checkpoints.sectionVerification') }}</legend>
 
-          <!-- 3 mode buttons -->
+          <!-- mode buttons -->
           <div class="flex flex-wrap gap-2">
             <button
-              v-for="mode in ['text', 'qr', 'missingWord']"
+              v-for="mode in ['text', 'qr', 'missingWord', 'multiField']"
               :key="mode"
-              @click="form.stage1Mode = mode"
+              @click="form.stage1Mode = mode; if (mode === 'multiField' && !form.stage1Keywords.length) form.stage1Keywords = [{ he: '', en: '' }]"
               :class="['px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-colors',
                 form.stage1Mode === mode
                   ? 'border-amber-500 bg-amber-500/10 text-amber-400'
                   : 'border-slate-600 bg-slate-700 text-slate-400']"
             >
-              {{ mode === 'text' ? '⌨️ ' + t('game.stage1.modeText')
-               : mode === 'qr'   ? '📷 ' + t('game.stage1.modeQr')
-               :                   '🔍 ' + t('game.stage1.modeMissingWord') }}
+              {{ mode === 'text'       ? '⌨️ ' + t('game.stage1.modeText')
+               : mode === 'qr'         ? '📷 ' + t('game.stage1.modeQr')
+               : mode === 'missingWord' ? '🔍 ' + t('game.stage1.modeMissingWord')
+               :                         '📋 ' + t('game.stage1.modeMultiField') }}
             </button>
           </div>
 
@@ -589,7 +702,7 @@ const stageModeLabel = (cp) => {
                 <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.stage1Keyword') }}</label>
                 <input v-model="form.stage1Keyword" class="input-field font-mono tracking-widest text-center text-lg" placeholder="keyword" />
               </div>
-              <QrCodeDisplay :value="form.stage1Keyword" :label="form.title" />
+              <QrCodeDisplay :value="form.stage1Keyword" :label="form.title" :brand="form.envelopeBrand || 'המרוץ לצפון'" />
             </div>
           </template>
 
@@ -638,6 +751,114 @@ const stageModeLabel = (cp) => {
                 <p class="text-xs text-slate-500 mt-1">{{ t('admin.checkpoints.keywordMultiHint') }}</p>
               </div>
             </div>
+          </template>
+
+          <!-- ── Mode MULTI-FIELD ── -->
+          <template v-else-if="form.stage1Mode === 'multiField'">
+            <!-- Instructions -->
+            <div class="grid md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.stage1Instruction') }}</label>
+                <textarea v-model="form.stage1Instruction" rows="2" class="input-field resize-none text-sm" :placeholder="t('admin.checkpoints.multiFieldInstructionHint')" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.stage1InstructionEn') }}</label>
+                <textarea v-model="form.stage1InstructionEn" rows="2" class="input-field resize-none text-sm" :placeholder="t('admin.checkpoints.multiFieldInstructionHint')" />
+              </div>
+            </div>
+
+            <!-- Keyword rows -->
+            <div class="space-y-2">
+              <div class="flex items-baseline justify-between">
+                <label class="block text-xs font-semibold text-slate-400">{{ t('admin.checkpoints.multiFieldKeywords') }}</label>
+                <span v-if="form.stage1MultiOrdered" class="text-xs text-amber-400 font-semibold">
+                  ↕ {{ t('admin.checkpoints.multiFieldOrderedPositions') }}
+                </span>
+              </div>
+              <div
+                v-for="(kw, i) in form.stage1Keywords"
+                :key="i"
+                :class="['flex items-center gap-2 p-2 rounded-xl border transition-colors',
+                  form.stage1MultiOrdered
+                    ? 'bg-amber-500/5 border-amber-500/30'
+                    : 'bg-slate-900/60 border-slate-700']"
+              >
+                <div class="shrink-0 flex flex-col items-center w-7">
+                  <span :class="['text-xs font-bold tabular-nums', form.stage1MultiOrdered ? 'text-amber-400' : 'text-slate-500']">
+                    {{ i + 1 }}
+                  </span>
+                  <span v-if="form.stage1MultiOrdered" class="text-amber-600/60 text-[10px] leading-none">pos</span>
+                </div>
+                <input
+                  v-model="kw.he"
+                  class="input-field input-sm flex-1 text-sm"
+                  :placeholder="t('admin.checkpoints.keywordPlaceholderHe')"
+                />
+                <input
+                  v-model="kw.en"
+                  class="input-field input-sm flex-1 text-sm"
+                  :placeholder="t('admin.checkpoints.keywordPlaceholderEn')"
+                />
+                <div class="flex flex-col gap-0.5 shrink-0" v-if="form.stage1MultiOrdered">
+                  <button
+                    @click="i > 0 && form.stage1Keywords.splice(i - 1, 0, form.stage1Keywords.splice(i, 1)[0])"
+                    :disabled="i === 0"
+                    class="text-slate-400 hover:text-amber-300 disabled:opacity-20 text-xs leading-none px-1"
+                  >▲</button>
+                  <button
+                    @click="i < form.stage1Keywords.length - 1 && form.stage1Keywords.splice(i + 1, 0, form.stage1Keywords.splice(i, 1)[0])"
+                    :disabled="i === form.stage1Keywords.length - 1"
+                    class="text-slate-400 hover:text-amber-300 disabled:opacity-20 text-xs leading-none px-1"
+                  >▼</button>
+                </div>
+                <button
+                  @click="form.stage1Keywords.splice(i, 1)"
+                  class="text-red-400 hover:text-red-300 shrink-0 p-1 rounded-lg hover:bg-red-500/10 transition-colors"
+                >✕</button>
+              </div>
+
+              <button
+                @click="form.stage1Keywords.push({ he: '', en: '' })"
+                class="w-full py-2 rounded-xl border border-dashed border-slate-600 text-slate-400 hover:text-amber-400 hover:border-amber-500/50 text-sm font-semibold transition-colors"
+              >
+                + {{ t('admin.checkpoints.multiFieldAddKeyword') }}
+              </button>
+            </div>
+            <p class="text-xs text-slate-500">{{ t('admin.checkpoints.multiFieldHint') }}</p>
+
+            <!-- Ordered mode: explicit order preview -->
+            <div v-if="form.stage1MultiOrdered && form.stage1Keywords.some(k => k.he || k.en)"
+                 class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1.5">
+              <p class="text-xs font-bold text-amber-400">{{ t('admin.checkpoints.multiFieldOrderPreviewTitle') }}</p>
+              <div class="flex flex-wrap gap-2">
+                <div
+                  v-for="(kw, i) in form.stage1Keywords"
+                  :key="i"
+                  class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40"
+                >
+                  <span class="text-amber-300 font-bold text-xs">{{ i + 1 }}.</span>
+                  <span class="text-slate-200 text-sm font-semibold">{{ kw.he || kw.en || '?' }}</span>
+                </div>
+              </div>
+              <p class="text-xs text-amber-600/80">{{ t('admin.checkpoints.multiFieldOrderPreviewHint') }}</p>
+            </div>
+
+            <!-- Ordering toggle -->
+            <label class="flex items-center gap-3 cursor-pointer group">
+              <div class="relative">
+                <input
+                  type="checkbox"
+                  v-model="form.stage1MultiOrdered"
+                  class="sr-only"
+                />
+                <div :class="['w-10 h-6 rounded-full transition-colors', form.stage1MultiOrdered ? 'bg-amber-500' : 'bg-slate-600']" />
+                <div :class="['absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform', form.stage1MultiOrdered ? 'translate-x-4' : '']" />
+              </div>
+              <div>
+                <span class="text-sm font-semibold text-slate-200">{{ t('admin.checkpoints.multiFieldOrdered') }}</span>
+                <p class="text-xs text-slate-500">{{ t('admin.checkpoints.multiFieldOrderedHint') }}</p>
+              </div>
+            </label>
           </template>
         </fieldset>
 
@@ -797,6 +1018,42 @@ const stageModeLabel = (cp) => {
             </div>
           </div>
 
+          <!-- ── QrScanMission: instruction + expected QR value ── -->
+          <div v-if="form.missionType === 'QrScanMission'" class="space-y-3">
+            <div class="flex items-start gap-2 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+              <span class="text-base shrink-0">📷</span>
+              <span>{{ t('admin.missions.qrScanNoteBody') }}</span>
+            </div>
+
+            <!-- Optional question text -->
+            <div class="grid md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">
+                  {{ t('admin.checkpoints.questionLabel') }}
+                  <span class="text-slate-600 font-normal ms-1">({{ t('admin.missions.optional') }})</span>
+                </label>
+                <textarea v-model="form.missionConfig.questions[0].question" rows="2" class="input-field resize-none text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">
+                  {{ t('admin.checkpoints.questionEnLabel') }}
+                  <span class="text-slate-600 font-normal ms-1">({{ t('admin.missions.optional') }})</span>
+                </label>
+                <textarea v-model="form.missionConfig.questions[0].questionEn" rows="2" class="input-field resize-none text-sm" />
+              </div>
+            </div>
+
+            <!-- QR expected value -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1">
+                {{ t('admin.missions.qrScanAnswerLabel') }}
+              </label>
+              <input v-model="form.missionConfig.questions[0].answer" class="input-field font-mono text-sm"
+                     :placeholder="t('admin.missions.qrScanAnswerPlaceholder')" />
+              <p class="text-xs text-slate-500 mt-1">{{ t('admin.missions.qrScanAnswerHint') }}</p>
+            </div>
+          </div>
+
           <!-- ── Questions loop: MultipleChoice, MissingWord, CompassMission ── -->
           <div v-if="['MultipleChoice', 'MissingWord', 'CompassMission'].includes(form.missionType)" class="space-y-4">
             <div
@@ -940,6 +1197,31 @@ const stageModeLabel = (cp) => {
             {{ saving ? t('common.loading') : t('admin.checkpoints.save') }}
           </button>
           <button @click="cancelForm" class="btn-secondary">{{ t('common.cancel') }}</button>
+        </div>
+
+        <!-- Bottom navigation arrows (edit mode only) -->
+        <div v-if="editingId" class="flex items-center justify-between gap-3 px-1 py-1 rounded-xl bg-slate-800/60 border border-slate-700">
+          <button
+            @click="navigateTo(prevCheckpoint)"
+            :disabled="!prevCheckpoint"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700 text-slate-300"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            <span class="hidden sm:inline truncate max-w-[120px]">{{ prevCheckpoint?.title ?? '' }}</span>
+            <span class="sm:hidden">Préc.</span>
+          </button>
+          <span class="text-xs text-slate-500 tabular-nums shrink-0">
+            {{ currentEditIndex + 1 }} / {{ sortedCheckpoints.length }}
+          </span>
+          <button
+            @click="navigateTo(nextCheckpoint)"
+            :disabled="!nextCheckpoint"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-700 text-slate-300"
+          >
+            <span class="hidden sm:inline truncate max-w-[120px]">{{ nextCheckpoint?.title ?? '' }}</span>
+            <span class="sm:hidden">Suiv.</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+          </button>
         </div>
       </div>
     </Transition>

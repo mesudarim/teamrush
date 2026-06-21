@@ -5,6 +5,7 @@
   Mission components emit: submit(correct: boolean, answer: any)
 -->
 <script setup>
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t, locale } = useI18n()
@@ -24,16 +25,14 @@ const instruction = computed(() => {
     ? props.config.instructionEn
     : props.config.instruction ?? ''
 })
-
-import { computed } from 'vue'
 </script>
 
 <template>
-  <div class="card space-y-5">
+  <div class="card space-y-6">
     <!-- Mission header -->
     <div class="text-center">
       <div v-if="showTitle" class="badge-amber mb-2">{{ t('game.envelope2.title') }}</div>
-      <p v-if="instruction" class="text-slate-200 text-base leading-relaxed font-medium">{{ instruction }}</p>
+      <p v-if="instruction" class="text-slate-200 text-base leading-relaxed font-medium whitespace-pre-line">{{ instruction }}</p>
     </div>
 
     <!-- Mission-specific content injected via slot -->

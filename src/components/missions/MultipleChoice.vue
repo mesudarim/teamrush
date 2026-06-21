@@ -2,8 +2,10 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseMission from './BaseMission.vue'
+import { useSound } from '@/composables/useSound'
 
 const { t, locale } = useI18n()
+const { playCorrect, playWrong } = useSound()
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
@@ -36,9 +38,11 @@ const handleChoice = (idx) => {
   if (solved.value || wrongIndices.value.has(idx)) return
   if (choices.value[idx]?.isCorrect) {
     solved.value = true
+    playCorrect()
     emit('correct')
   } else {
     wrongIndices.value = new Set([...wrongIndices.value, idx])
+    playWrong()
     emit('wrong')
   }
 }
@@ -46,11 +50,11 @@ const handleChoice = (idx) => {
 
 <template>
   <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
-    <div class="space-y-3">
+    <div class="space-y-5">
 
       <!-- Question text -->
       <div v-if="questionText" class="bg-slate-900/60 rounded-xl px-4 py-3 border border-slate-700 text-center">
-        <p class="text-white font-bold text-base leading-snug">{{ questionText }}</p>
+        <p class="text-white font-bold text-base leading-snug whitespace-pre-line">{{ questionText }}</p>
       </div>
 
       <!-- Choices -->

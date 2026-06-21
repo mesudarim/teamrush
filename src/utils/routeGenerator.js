@@ -6,32 +6,39 @@
  * for Day 2, drawn from the full pool without repetition within a team.
  *
  * Coprime steps are computed dynamically for any pool size M.
- * Unique-route capacity = M × (number of integers coprime to M, up to 8 families).
+ * Unique-route capacity = M × φ(M)  (M times Euler's totient of M).
  */
 
 function gcd(a, b) { return b === 0 ? a : gcd(b, a % b) }
 
-function getCoprimeFamilies(n, maxFamilies = 8) {
+function getCoprimeFamilies(n) {
   const steps = []
-  for (let s = 1; s < n && steps.length < maxFamilies; s++) {
+  for (let s = 1; s < n; s++) {
     if (gcd(s, n) === 1) steps.push(s)
   }
   return steps
 }
 
 /**
- * @param {string[]} checkpointIds    All available checkpoint IDs (length M)
- * @param {number}   numTeams         Number of teams to generate routes for
- * @param {number}   checkpointsPerDay Checkpoints each team gets per day (Day1 + Day2 = 2×)
+ * @param {string[]} checkpointIds     All available checkpoint IDs (length M)
+ * @param {number}   numTeams          Number of teams to generate routes for
+ * @param {number}   checkpointsPerDay Checkpoints each team gets per day (includes final if set)
+ * @param {string|null} finalCheckpointId  If set, this checkpoint is always placed last on each day
  * @returns {{ teamIndex: number, day1Order: string[], day2Order: string[] }[]}
  */
-export function generateRoutes(checkpointIds, numTeams, checkpointsPerDay) {
-  const M = checkpointIds.length
-  const perTeam = checkpointsPerDay * 2
+export function generateRoutes(checkpointIds, numTeams, checkpointsPerDay, finalCheckpointId = null) {
+  // Exclude the final checkpoint from the random pool
+  const pool = finalCheckpointId
+    ? checkpointIds.filter(id => id !== finalCheckpointId)
+    : checkpointIds
 
-  if (perTeam > M) {
+  const randomPerDay = finalCheckpointId ? checkpointsPerDay - 1 : checkpointsPerDay
+  const M       = pool.length
+  const perTeam = randomPerDay * 2
+
+  if (randomPerDay < 0 || perTeam > M) {
     throw new Error(
-      `checkpointsPerDay (${checkpointsPerDay}) × 2 = ${perTeam} exceeds total checkpoints (${M})`
+      `checkpointsPerDay (${checkpointsPerDay}) × 2 exceeds available checkpoints (${M}${finalCheckpointId ? ' after reserving the final checkpoint' : ''})`
     )
   }
 
@@ -50,19 +57,21 @@ export function generateRoutes(checkpointIds, numTeams, checkpointsPerDay) {
     const offset    = i % M
     const step      = families[familyIdx]
 
-    // Full circular permutation of all M checkpoints for this team
+    // Full circular permutation of the pool for this team
     const indices = []
     for (let k = 0; k < M; k++) {
       indices.push((offset + k * step) % M)
     }
 
-    // Take only the first `perTeam` slots, split evenly across the two days
-    const selected = indices.slice(0, perTeam).map(idx => checkpointIds[idx])
+    // Take only the random slots, split evenly across the two days
+    const selected  = indices.slice(0, perTeam).map(idx => pool[idx])
+    const day1Random = selected.slice(0, randomPerDay)
+    const day2Random = selected.slice(randomPerDay)
 
     routes.push({
       teamIndex: i,
-      day1Order: selected.slice(0, checkpointsPerDay),
-      day2Order: selected.slice(checkpointsPerDay),
+      day1Order: finalCheckpointId ? [...day1Random, finalCheckpointId] : day1Random,
+      day2Order: finalCheckpointId ? [...day2Random, finalCheckpointId] : day2Random,
     })
   }
 

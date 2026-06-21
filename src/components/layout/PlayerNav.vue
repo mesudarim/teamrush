@@ -29,8 +29,8 @@ const confirmExit = async () => {
     <div class="max-w-lg mx-auto flex items-center justify-between gap-3">
       <!-- Logo -->
       <div class="flex items-center gap-2">
-        <div class="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center overflow-hidden">
-          <img src="@/assets/harpe.png" alt="logo" class="w-6 h-6 object-contain" style="mix-blend-mode: multiply;" />
+        <div class="w-10 h-10 rounded-full overflow-hidden shrink-0">
+          <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-cover" />
         </div>
         <span class="font-bold text-amber-400 text-lg hidden sm:block">{{ t('app.name') }}</span>
       </div>
@@ -48,6 +48,13 @@ const confirmExit = async () => {
           </svg>
           <span class="text-sm hidden sm:inline">{{ t('nav.leaderboard') }}</span>
         </RouterLink>
+        <a href="tel:+972526630434"
+           class="btn-ghost py-1.5 px-2 flex items-center justify-center text-green-400 hover:text-green-300"
+           aria-label="Call organiser">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24 11.36 11.36 0 003.56.57 1 1 0 011 1V21a1 1 0 01-1 1A17 17 0 013 5a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.01l-2.2 2.21z"/>
+          </svg>
+        </a>
         <LanguageToggle />
         <button v-if="auth.isLoggedIn" @click="showExitModal = true"
                 class="btn-ghost text-sm py-1.5 px-3 text-red-400 hover:text-red-300">

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { createTeam, getTeam, findParticipantByIdentifier, updateParticipant, resetTeamProgress } from '@/firebase/firestore'
+import { createTeam, getTeam, findParticipantByIdentifier, updateParticipant, deleteTeamDoc } from '@/firebase/firestore'
 
 const PSEUDO_KEY       = 'teamrush_pseudo'
 const PARTICIPANT_KEY  = 'teamrush_participant'
@@ -26,11 +26,11 @@ export const useAuthStore = defineStore('auth', () => {
       participant.value = found
 
       // createTeam handles both new teams and returning players (updates displayName)
-      // Pass full participant so pre-assigned routes are copied to the team on first login
-      await createTeam(teamPseudo, trackId, found.name ?? '', found)
-      team.value = await getTeam(teamPseudo)
+      // Returns local team data directly — avoids an extra getDoc round-trip
+      team.value = await createTeam(teamPseudo, trackId, found.name ?? '', found)
 
-      await updateParticipant(found.id, { loggedIn: true, teamId: teamPseudo, lastLoginAt: new Date() })
+      // Fire-and-forget — admin visibility only, not needed for game to start
+      updateParticipant(found.id, { loggedIn: true, teamId: teamPseudo, lastLoginAt: new Date() }).catch(() => {})
 
       // localStorage so the session survives closing the browser/tab
       localStorage.setItem(PSEUDO_KEY, teamPseudo)
@@ -51,12 +51,21 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem(PARTICIPANT_KEY)
   }
 
+  const logoutAndSetInactive = async () => {
+    // Keeps the team doc (score preserved) but marks participant as no longer logged in
+    if (participant.value?.id) {
+      await updateParticipant(participant.value.id, { loggedIn: false }).catch(() => {})
+    }
+    logout()
+  }
+
   const resetAndLogout = async () => {
+    // Delete the team document entirely → participant returns to 'waiting' in Monitor & Participants
     if (team.value?.pseudo) {
-      await resetTeamProgress(team.value.pseudo, team.value.trackId)
+      await deleteTeamDoc(team.value.pseudo)
     }
     if (participant.value?.id) {
-      await updateParticipant(participant.value.id, { loggedIn: false })
+      await updateParticipant(participant.value.id, { loggedIn: false, finished: false })
     }
     logout()
   }
@@ -82,5 +91,5 @@ export const useAuthStore = defineStore('auth', () => {
     team.value = await getTeam(pseudo.value)
   }
 
-  return { team, participant, isLoading, error, isLoggedIn, pseudo, trackId, login, logout, resetAndLogout, restoreSession, refreshTeam }
+  return { team, participant, isLoading, error, isLoggedIn, pseudo, trackId, login, logout, logoutAndSetInactive, resetAndLogout, restoreSession, refreshTeam }
 })

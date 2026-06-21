@@ -1,12 +1,16 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useGameStore } from '@/stores/game'
+import { useAuthStore } from '@/stores/auth'
+import { useSound } from '@/composables/useSound'
 
 const { t } = useI18n()
 const router = useRouter()
 const game = useGameStore()
+const auth = useAuthStore()
+const { playEndOfGame } = useSound()
 
 // ── Confetti ──────────────────────────────────────────────────────────────────
 const confettiPieces = Array.from({ length: 40 }, (_, i) => ({
@@ -19,33 +23,31 @@ const confettiPieces = Array.from({ length: 40 }, (_, i) => ({
   rotate: Math.random() * 360,
 }))
 
+// ── Points breakdown ──────────────────────────────────────────────────────────
+// timeBonusPoints is persisted in Firestore → survives page refresh
+const timeBonusPts  = computed(() => auth.team?.timeBonusPoints ?? game.timeBonus ?? 0)
+const totalPts      = computed(() => game.totalPoints)
+const questionPts   = computed(() => totalPts.value - timeBonusPts.value)
+
 // ── Time bonus counter animation ───────────────────────────────────────────────
 const displayBonus = ref(0)
 const bonusFinished = ref(false)
-const coins = ref([])   // flying coins
+const coins = ref([])
 let countInterval = null
 let coinInterval = null
 let coinId = 0
 
-const parSeconds = (game.gameSettings?.timeBonusPar ?? 90) * 60
-const parMinutes = game.gameSettings?.timeBonusPar ?? 90
-const timeSaved = game.formatTime(Math.max(0, parSeconds - game.elapsedSeconds))
-
 const spawnCoin = () => {
-  coins.value.push({
-    id: coinId++,
-    left: 30 + Math.random() * 40,
-    delay: 0,
-  })
-  // remove after animation
-  setTimeout(() => {
-    coins.value = coins.value.filter(c => c.id !== coinId - 1)
-  }, 1200)
+  const id = coinId++
+  coins.value.push({ id, left: 30 + Math.random() * 40 })
+  setTimeout(() => { coins.value = coins.value.filter(c => c.id !== id) }, 1200)
 }
 
 onMounted(() => {
-  const target = game.timeBonus
-  if (target <= 0) { bonusFinished.value = true; return }
+  game.finishingGame = false   // Remove the bridging overlay from GameView
+  playEndOfGame()
+  const target = timeBonusPts.value
+  if (target <= 0) { bonusFinished.value = true; displayBonus.value = 0; return }
 
   const DURATION = 2800
   const STEPS = 80
@@ -55,7 +57,6 @@ onMounted(() => {
 
   countInterval = setInterval(() => {
     step++
-    // ease-out: fast at start, slows toward end
     const progress = 1 - Math.pow(1 - step / STEPS, 3)
     displayBonus.value = Math.round(progress * target)
     if (step >= STEPS) {
@@ -71,6 +72,12 @@ onUnmounted(() => {
   clearInterval(countInterval)
   clearInterval(coinInterval)
 })
+
+const goHome = async () => {
+  game.cleanup()
+  await auth.logoutAndSetInactive()
+  router.push({ name: 'Login' })
+}
 </script>
 
 <template>
@@ -115,44 +122,44 @@ onUnmounted(() => {
           <p class="text-slate-400 text-sm">{{ t('game.finished.subtitle') }}</p>
         </div>
 
-        <!-- Stats grid -->
-        <div class="grid grid-cols-2 gap-3">
-          <div class="bg-slate-900/50 rounded-xl p-4 border border-slate-700">
-            <div class="text-xs text-slate-400 mb-1">{{ t('game.finished.totalTime') }}</div>
-            <div class="text-2xl font-black text-blue-400">{{ game.formatTime(game.elapsedSeconds) }}</div>
-          </div>
-          <div class="bg-slate-900/50 rounded-xl p-4 border border-slate-700">
-            <div class="text-xs text-slate-400 mb-1">{{ t('game.finished.totalPoints') }}</div>
-            <div class="text-2xl font-black text-amber-400">{{ game.totalPoints }}</div>
-          </div>
-        </div>
+        <!-- Score breakdown — receipt style -->
+        <div class="bg-slate-900/60 rounded-2xl border border-slate-700 overflow-hidden">
 
-        <!-- Time bonus section -->
-        <div v-if="game.timeBonus > 0" class="rounded-2xl overflow-hidden border border-amber-500/40">
-          <div class="bg-amber-400 px-4 py-2 text-center">
-            <span class="text-black font-black text-xs tracking-[0.2em] uppercase">
-              ⏱ {{ $i18n.locale === 'en' ? 'TIME BONUS' : 'בונוס זמן' }}
-            </span>
+          <!-- Question points row -->
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+            <span class="text-slate-400 text-sm">🎯 {{ t('game.finished.questionPoints') }}</span>
+            <span class="font-black text-green-400 tabular-nums text-lg">+{{ questionPts }}</span>
           </div>
-          <div class="bg-black px-4 py-4 text-center space-y-1">
-            <p class="text-slate-400 text-xs">
-              {{ $i18n.locale === 'en'
-                ? `finished ${timeSaved} before the ${parMinutes} min par`
-                : `סיימתם ${timeSaved} לפני יעד ${parMinutes} דקות` }}
-            </p>
-            <div class="flex items-center justify-center gap-2">
-              <span class="text-4xl font-black text-amber-400 tabular-nums">+{{ displayBonus }}</span>
-              <span class="text-2xl">🪙</span>
+
+          <!-- Time row -->
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+            <span class="text-slate-400 text-sm">⏱ {{ t('game.finished.totalTime') }}</span>
+            <span class="font-black text-blue-400 tabular-nums text-lg">{{ game.formatTime(game.elapsedSeconds) }}</span>
+          </div>
+
+          <!-- Time bonus row (animated counter) -->
+          <div class="flex items-center justify-between px-4 py-3 border-b border-amber-500/30 bg-amber-500/5 relative overflow-hidden">
+            <span class="text-amber-300/80 text-sm">⚡ {{ t('game.finished.timeBonus') }}</span>
+            <div class="flex items-center gap-1.5">
+              <span class="font-black text-amber-400 tabular-nums text-lg">+{{ displayBonus }}</span>
+              <span class="text-base">🪙</span>
             </div>
-            <p v-if="bonusFinished" class="text-amber-400/60 text-xs animate-pulse">
-              {{ $i18n.locale === 'en' ? 'added to your score!' : 'נוסף לניקוד שלכם!' }}
-            </p>
+          </div>
+
+          <!-- Total row -->
+          <div class="flex items-center justify-between px-4 py-4 bg-amber-500/10">
+            <span class="text-amber-300 font-bold text-sm">⭐ {{ t('game.finished.totalPoints') }}</span>
+            <span class="text-3xl font-black text-amber-400 tabular-nums">{{ totalPts }}</span>
           </div>
         </div>
 
         <button @click="router.push({ name: 'Leaderboard' })" class="btn-primary w-full text-lg py-4">
           {{ t('game.finished.leaderboardBtn') }}
           <span class="ms-2">📊</span>
+        </button>
+
+        <button @click="goHome" class="w-full py-3.5 rounded-2xl font-bold text-sm border border-slate-600 text-slate-300 bg-slate-800/60 hover:bg-slate-700 active:scale-[0.97] transition-all">
+          🏠 {{ t('game.finished.homeBtn') }}
         </button>
       </div>
     </div>

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useGameStore } from '@/stores/game'
 import { useAuthStore } from '@/stores/auth'
@@ -14,6 +14,7 @@ import PhaseStage2       from '@/components/game/PhaseStage2.vue'
 import PhaseResult       from '@/components/game/PhaseResult.vue'
 import PhaseFinished     from '@/components/game/PhaseFinished.vue'
 import PhaseDay1Complete from '@/components/game/PhaseDay1Complete.vue'
+import PhaseTapis        from '@/components/game/PhaseTapis.vue'
 
 const { t } = useI18n()
 const game = useGameStore()
@@ -23,6 +24,8 @@ const auth = useAuthStore()
 const blockBack = () => {
   history.pushState(null, '', window.location.pathname)
 }
+
+watch(() => game.phase, () => { window.scrollTo({ top: 0 }) })
 
 onMounted(() => {
   game.loadTrack()
@@ -41,6 +44,14 @@ onUnmounted(() => {
     <PointsPopup />
     <PlayerNav />
 
+    <!-- Bridging overlay: stays visible between PhaseTapis unmount and PhaseFinished mount -->
+    <Transition name="finish-overlay">
+      <div v-if="game.finishingGame"
+           class="fixed inset-0 z-40 bg-slate-900 flex items-center justify-center pointer-events-none">
+        <LoadingSpinner size="lg" />
+      </div>
+    </Transition>
+
     <!-- Main content -->
     <div class="flex-1 flex flex-col">
       <div v-if="game.isLoading" class="flex-1 flex items-center justify-center">
@@ -58,13 +69,14 @@ onUnmounted(() => {
       </div>
 
       <template v-else>
-        <Transition name="phase" mode="out-in">
+        <Transition name="phase">
           <PhaseEnvelope1    v-if="game.phase === 'envelope1'"  :key="'env1-' + game.currentIndex" />
           <PhaseStage1       v-else-if="game.phase === 'stage1'"    :key="'st1-' + game.currentIndex" />
           <CelebrationScreen v-else-if="game.phase === 'bravo'"     :key="'bravo-' + game.currentIndex" />
           <PhaseEnvelope2    v-else-if="game.phase === 'envelope2'"  :key="'env2-' + game.currentIndex" />
           <PhaseStage2       v-else-if="game.phase === 'stage2'"    :key="'st2-' + game.currentIndex" />
           <PhaseResult       v-else-if="game.phase === 'result'"    :key="'res-' + game.currentIndex" />
+          <PhaseTapis        v-else-if="game.phase === 'tapis'"        key="tapis" />
           <PhaseFinished     v-else-if="game.phase === 'finished'"     key="finished" />
           <PhaseDay1Complete v-else-if="game.phase === 'day1complete'" key="day1complete" />
         </Transition>
@@ -129,4 +141,8 @@ onUnmounted(() => {
 .phase-enter-active { animation: slide-up 0.35s ease-out; }
 .phase-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .phase-leave-to { opacity: 0; transform: translateY(-10px); }
+
+/* Bridging overlay fades out once PhaseFinished is mounted */
+.finish-overlay-leave-active { transition: opacity 0.5s ease; }
+.finish-overlay-leave-to { opacity: 0; }
 </style>

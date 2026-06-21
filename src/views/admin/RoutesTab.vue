@@ -1,32 +1,44 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getCheckpoints, getParticipants, assignRoutesToParticipants, activateDay2 } from '@/firebase/firestore'
+import { useAdminStore } from '@/stores/admin'
+import { getCheckpoints, getParticipants, assignRoutesToParticipants, activateDay2, activateDay1, getSettings, updateSettings } from '@/firebase/firestore'
 import { generateRoutes } from '@/utils/routeGenerator'
 
 const { t } = useI18n()
+const admin = useAdminStore()
 
 // ── State ──────────────────────────────────────────────────────────────────────
-const checkpoints       = ref([])
-const participants      = ref([])
-const checkpointsPerDay = ref(10)
-const activeDay         = ref(1)
-const isLoading         = ref(false)
-const isAssigning       = ref(false)
-const isActivating      = ref(false)
-const assigned          = ref(false)
-const error             = ref('')
-const successMsg        = ref('')
+const checkpoints        = ref([])
+const participants       = ref([])
+const checkpointsPerDay  = ref(10)
+const finalCheckpointId  = ref('')   // checkpoint pinned to last position on every route
+const activeDay          = ref(1)
+const isLoading          = ref(false)
+const isAssigning        = ref(false)
+const isActivating       = ref(false)
+const assigned           = ref(false)
+const error              = ref('')
+const successMsg         = ref('')
 
 const generatedRoutes = ref([])  // [{ participantId, name, day1Order, day2Order }]
+
+// Detect active day from admin.teams (real-time listener) — teams.day is updated by activateDay2()
+const currentGameDay = computed(() =>
+  admin.teams.some(t => t.day === 2) ? 2 : 1
+)
 
 onMounted(async () => {
   isLoading.value = true
   try {
-    [checkpoints.value, participants.value] = await Promise.all([
+    const [cps, parts, settings] = await Promise.all([
       getCheckpoints(),
       getParticipants(),
+      getSettings(),
     ])
+    checkpoints.value  = cps
+    participants.value = parts
+    if (settings.finalCheckpointId) finalCheckpointId.value = settings.finalCheckpointId
     if (participants.value.some(p => p.day1Order?.length)) {
       buildRoutesFromParticipants()
       assigned.value = true
@@ -35,6 +47,10 @@ onMounted(async () => {
     isLoading.value = false
   }
 })
+
+const saveFinalCheckpoint = async () => {
+  await updateSettings({ finalCheckpointId: finalCheckpointId.value })
+}
 
 // ── Derived ────────────────────────────────────────────────────────────────────
 const checkpointMap = computed(() => {
@@ -77,9 +93,12 @@ function buildRoutesFromParticipants() {
 async function generateAndAssign() {
   error.value = ''
   successMsg.value = ''
-  const cpIds = checkpoints.value.map(cp => cp.id)
-  const ppd = checkpointsPerDay.value
-  if (ppd < 1 || ppd * 2 > cpIds.length) {
+  const cpIds  = checkpoints.value.map(cp => cp.id)
+  const ppd    = checkpointsPerDay.value
+  const finalId = finalCheckpointId.value || null
+  const poolSize    = finalId ? cpIds.length - 1 : cpIds.length
+  const randomPerDay = finalId ? ppd - 1 : ppd
+  if (ppd < 1 || randomPerDay * 2 > poolSize) {
     error.value = t('admin.routes.errorTooFew', { ppd, ppd_x2: ppd * 2, total: cpIds.length })
     return
   }
@@ -90,7 +109,8 @@ async function generateAndAssign() {
 
   isAssigning.value = true
   try {
-    const routes = generateRoutes(cpIds, sortedParticipants.value.length, ppd)
+    await saveFinalCheckpoint()
+    const routes = generateRoutes(cpIds, sortedParticipants.value.length, ppd, finalId)
     const assignments = sortedParticipants.value.map((p, i) => ({
       participantId: p.id,
       trackId:   '',
@@ -129,6 +149,23 @@ async function handleActivateDay2() {
     isActivating.value = false
   }
 }
+
+async function handleActivateDay1() {
+  if (!confirm(t('admin.routes.activateDay1Confirm'))) return
+  error.value = ''
+  successMsg.value = ''
+  isActivating.value = true
+  try {
+    await activateDay1()
+    participants.value = await getParticipants()
+    buildRoutesFromParticipants()
+    successMsg.value = t('admin.routes.successDay1')
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    isActivating.value = false
+  }
+}
 </script>
 
 <template>
@@ -141,15 +178,44 @@ async function handleActivateDay2() {
         <p class="text-slate-400 text-sm mt-0.5">{{ t('admin.routes.subtitle') }}</p>
       </div>
 
-      <!-- Activate Day 2 button -->
-      <button
-        @click="handleActivateDay2"
-        :disabled="isActivating || !assigned"
-        class="btn-danger flex items-center gap-2 disabled:opacity-40"
-      >
-        <span v-if="isActivating" class="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-        🌅 {{ t('admin.routes.activateDay2Btn') }}
-      </button>
+      <!-- Day toggle -->
+      <div v-if="assigned" class="flex bg-slate-800 rounded-2xl p-1 gap-1 border border-slate-700">
+
+        <!-- Day 1 segment -->
+        <div
+          v-if="currentGameDay === 1"
+          class="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-amber-500 text-slate-900 shadow"
+        >
+          ☀️ {{ t('admin.routes.day1Label') }}
+        </div>
+        <button
+          v-else
+          @click="handleActivateDay1"
+          :disabled="isActivating"
+          class="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-slate-700/60 text-slate-400 hover:bg-slate-600 hover:text-white transition-all disabled:opacity-40"
+        >
+          <span v-if="isActivating" class="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+          ☀️ {{ t('admin.routes.day1Activate') }}
+        </button>
+
+        <!-- Day 2 segment -->
+        <button
+          v-if="currentGameDay === 1"
+          @click="handleActivateDay2"
+          :disabled="isActivating"
+          class="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-slate-700/60 text-slate-400 hover:bg-slate-600 hover:text-white transition-all disabled:opacity-40"
+        >
+          <span v-if="isActivating" class="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+          {{ t('admin.routes.day2Activate') }} 🌅
+        </button>
+        <div
+          v-else
+          class="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold bg-green-500 text-white shadow"
+        >
+          🌅 {{ t('admin.routes.day2Label') }}
+        </div>
+
+      </div>
     </div>
 
     <!-- Error / success -->
@@ -165,34 +231,53 @@ async function handleActivateDay2() {
     <template v-else>
       <!-- Config panel -->
       <div class="card space-y-4">
-        <div class="flex flex-wrap gap-4 items-end justify-between">
-          <!-- Left: stats + input -->
-          <div class="flex flex-wrap gap-5 items-end">
-            <div class="text-sm text-slate-400 space-y-1">
-              <div>📍 <strong class="text-white">{{ cpCount }}</strong> {{ t('admin.routes.statsCheckpoints') }}</div>
-              <div>👥 <strong class="text-white">{{ sortedParticipants.length }}</strong> {{ t('admin.routes.statsParticipants') }}</div>
+        <div class="space-y-4">
+          <div class="flex flex-wrap gap-4 items-end justify-between">
+            <!-- Left: stats + checkpoints per day -->
+            <div class="flex flex-wrap gap-5 items-end">
+              <div class="text-sm text-slate-400 space-y-1">
+                <div>📍 <strong class="text-white">{{ cpCount }}</strong> {{ t('admin.routes.statsCheckpoints') }}</div>
+                <div>👥 <strong class="text-white">{{ sortedParticipants.length }}</strong> {{ t('admin.routes.statsParticipants') }}</div>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">{{ t('admin.routes.checkpointsPerDay') }}</label>
+                <input
+                  v-model.number="checkpointsPerDay"
+                  type="number"
+                  min="1"
+                  :max="cpCount"
+                  class="input-field w-24 text-center font-bold text-white text-lg"
+                />
+              </div>
             </div>
-            <div>
-              <label class="block text-xs text-slate-400 mb-1">{{ t('admin.routes.checkpointsPerDay') }}</label>
-              <input
-                v-model.number="checkpointsPerDay"
-                type="number"
-                min="1"
-                :max="cpCount"
-                class="input-field w-24 text-center font-bold text-white text-lg"
-              />
-            </div>
+
+            <!-- Generate button -->
+            <button
+              @click="generateAndAssign"
+              :disabled="isAssigning || cpCount === 0"
+              class="btn-primary flex items-center gap-2 disabled:opacity-40"
+            >
+              <span v-if="isAssigning" class="w-4 h-4 rounded-full border-2 border-slate-900 border-t-transparent animate-spin" />
+              ⚡ {{ t('admin.routes.generateBtn') }}
+            </button>
           </div>
 
-          <!-- Generate button -->
-          <button
-            @click="generateAndAssign"
-            :disabled="isAssigning || cpCount === 0"
-            class="btn-primary flex items-center gap-2 disabled:opacity-40"
-          >
-            <span v-if="isAssigning" class="w-4 h-4 rounded-full border-2 border-slate-900 border-t-transparent animate-spin" />
-            ⚡ {{ t('admin.routes.generateBtn') }}
-          </button>
+          <!-- Final checkpoint selector -->
+          <div class="border-t border-slate-700 pt-4">
+            <label class="block text-xs text-slate-400 mb-1.5">
+              🏁 {{ t('admin.routes.finalCheckpoint') }}
+            </label>
+            <select
+              v-model="finalCheckpointId"
+              class="input-field text-sm"
+            >
+              <option value="">— {{ t('admin.routes.finalCheckpointNone') }} —</option>
+              <option v-for="cp in checkpoints" :key="cp.id" :value="cp.id">
+                {{ cp.title }}
+              </option>
+            </select>
+            <p class="text-xs text-slate-500 mt-1">{{ t('admin.routes.finalCheckpointHint') }}</p>
+          </div>
         </div>
       </div>
 
@@ -223,9 +308,12 @@ async function handleActivateDay2() {
                 </th>
                 <th
                   v-for="n in checkpointsPerDay" :key="n"
-                  class="px-3 py-2 text-center text-amber-400 font-semibold whitespace-nowrap min-w-[110px]"
+                  :class="[
+                    'px-3 py-2 text-center font-semibold whitespace-nowrap min-w-[110px]',
+                    finalCheckpointId && n === checkpointsPerDay ? 'text-amber-300 bg-amber-500/10' : 'text-amber-400'
+                  ]"
                 >
-                  CP{{ n }}
+                  {{ finalCheckpointId && n === checkpointsPerDay ? '🏁' : `CP${n}` }}
                 </th>
               </tr>
             </thead>

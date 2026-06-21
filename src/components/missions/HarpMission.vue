@@ -2,8 +2,10 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseMission from './BaseMission.vue'
+import { useSound } from '@/composables/useSound'
 
 const { t } = useI18n()
+const { playCorrect, playWrong } = useSound()
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
@@ -125,12 +127,13 @@ const onStringClick = async (idx) => {
     if (userSequence.value.length === MELODY.length) {
       gameState.value = 'done'
       await sleep(700)
+      playCorrect()
       emit('correct')
     }
   } else {
-    // Wrong note: flash red, reset sequence
     wrongIdx.value = idx
     setTimeout(() => { wrongIdx.value = -1; userSequence.value = [] }, 800)
+    playWrong()
     emit('wrong')
   }
 }

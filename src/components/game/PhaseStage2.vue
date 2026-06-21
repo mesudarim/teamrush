@@ -17,6 +17,7 @@ const missionRegistry = {
   AudioRecorder:   defineAsyncComponent(() => import('@/components/missions/AudioRecorder.vue')),
   MissingWord:     defineAsyncComponent(() => import('@/components/missions/MissingWord.vue')),
   HarpMission:     defineAsyncComponent(() => import('@/components/missions/HarpMission.vue')),
+  QrScanMission:   defineAsyncComponent(() => import('@/components/missions/QrScanMission.vue')),
 }
 
 const currentQuestion = computed(() => game.currentQuestion)
@@ -73,7 +74,7 @@ const confirmSkip = async () => {
     </div>
 
     <Transition name="phase" mode="out-in">
-      <div :key="game.currentQuestionIndex" class="w-full animate-slide-up">
+      <div :key="game.currentQuestionIndex" class="flex-1 flex flex-col justify-center animate-slide-up">
         <Suspense>
           <template #default>
             <component

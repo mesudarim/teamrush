@@ -2,8 +2,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseMission from './BaseMission.vue'
+import { useSound } from '@/composables/useSound'
 
 const { t, locale } = useI18n()
+const { playCorrect, playWrong } = useSound()
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
@@ -165,11 +167,13 @@ const submit = () => {
   if (!answer.value.trim() || solved.value) return
   if (checkAnswer(answer.value)) {
     solved.value = true
+    playCorrect()
     emit('correct')
   } else {
     wrongAttempts.value++
     showError.value = true
     answer.value = ''
+    playWrong()
     emit('wrong')
     setTimeout(() => { showError.value = false }, 1600)
   }
@@ -182,7 +186,7 @@ const submit = () => {
 
       <!-- Question text -->
       <div v-if="questionText" class="bg-slate-900/60 rounded-xl px-5 py-4 border border-slate-700 text-center">
-        <p class="text-white font-bold text-2xl leading-snug"
+        <p class="text-white font-bold text-2xl leading-snug whitespace-pre-line"
            style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
           {{ questionText }}
         </p>

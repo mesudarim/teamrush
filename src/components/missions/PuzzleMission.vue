@@ -2,8 +2,10 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseMission from './BaseMission.vue'
+import { useSound } from '@/composables/useSound'
 
 const { t } = useI18n()
+const { playCorrect } = useSound()
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
@@ -76,6 +78,7 @@ const selectPiece = (cellIdx) => {
 
 const onVictory = () => {
   solved.value = true
+  playCorrect()
   setTimeout(() => {
     completed.value = true
     setTimeout(() => emit('correct', MAX_MOVES - count.value), 2000)
@@ -93,7 +96,7 @@ const movesOverHalf = computed(() => count.value > MAX_MOVES * 0.75)
 
 <template>
   <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
-    <div class="space-y-4" style="direction: ltr;">
+    <div class="space-y-5" style="direction: ltr;">
 
       <!-- Instruction -->
       <p class="text-center text-slate-300 text-sm font-medium">
@@ -110,7 +113,7 @@ const movesOverHalf = computed(() => count.value > MAX_MOVES * 0.75)
           />
         </div>
         <div class="flex items-baseline justify-center gap-1">
-          <span class="text-xl font-black tabular-nums" :class="movesOverHalf ? 'text-red-400' : 'text-white'">
+          <span class="text-xl font-bold tabular-nums" :class="movesOverHalf ? 'text-red-400' : 'text-white'">
             {{ count }}
           </span>
           <span class="text-slate-500 text-sm">/ {{ MAX_MOVES }}</span>
@@ -166,15 +169,6 @@ const movesOverHalf = computed(() => count.value > MAX_MOVES * 0.75)
         🧩 {{ t('missions.puzzleMission.noImage') }}
       </div>
 
-      <!-- Skip button -->
-      <button
-        v-if="!completed && !failed"
-        @click="skip"
-        class="w-full text-slate-500 hover:text-slate-300 text-sm py-2 transition-colors"
-      >
-        {{ t('missions.puzzleMission.skip') }}
-      </button>
-
       <!-- ─── Success overlay ─── -->
       <Teleport to="body">
         <Transition name="overlay">
@@ -189,9 +183,9 @@ const movesOverHalf = computed(() => count.value > MAX_MOVES * 0.75)
                 />
               </div>
               <div class="text-6xl mb-3">🏆</div>
-              <div class="text-2xl font-black text-white mb-1">{{ t('missions.puzzleMission.bravo') }}</div>
+              <div class="text-2xl font-bold text-white mb-1">{{ t('missions.puzzleMission.bravo') }}</div>
               <div class="text-green-200 text-sm">{{ t('missions.puzzleMission.solved', { count }) }}</div>
-              <div class="text-3xl font-black text-amber-300 mt-3">+{{ (checkpoint.pointsCorrect ?? 5) + (MAX_MOVES - count) }} pts</div>
+              <div class="text-3xl font-bold text-amber-300 mt-3">+{{ (checkpoint.pointsCorrect ?? 5) + (MAX_MOVES - count) }} pts</div>
             </div>
           </div>
         </Transition>
@@ -203,7 +197,7 @@ const movesOverHalf = computed(() => count.value > MAX_MOVES * 0.75)
           <div v-if="failed" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-6">
             <div class="bg-slate-800 border border-slate-600 rounded-3xl p-8 text-center shadow-2xl max-w-xs w-full">
               <div class="text-6xl mb-3">💪</div>
-              <div class="text-xl font-black text-white">{{ t('missions.puzzleMission.nextTime') }}</div>
+              <div class="text-xl font-bold text-white">{{ t('missions.puzzleMission.nextTime') }}</div>
             </div>
           </div>
         </Transition>

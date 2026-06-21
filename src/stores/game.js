@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getTrack, getCheckpoint, updateTeamProgress, startCheckpointTimer, markTeamFinished, markDay1Complete, subscribeToTeam, adjustPoints, saveTeamPhase, getSettings } from '@/firebase/firestore'
+import { getTrack, getCheckpoint, updateTeamProgress, startCheckpointTimer, markTeamFinished, markDay1Complete, subscribeToTeam, adjustPoints, saveTeamPhase, getSettings, subscribeToSettings, setPreLaunchDone } from '@/firebase/firestore'
 import { useAuthStore } from './auth'
 
 export const useGameStore = defineStore('game', () => {
@@ -28,6 +28,7 @@ export const useGameStore = defineStore('game', () => {
   const gameSettings = ref({})
   let timerInterval = null
   let teamUnsubscribe = null
+  let settingsUnsubscribe = null
 
   const currentIndex = computed(() => authStore.team?.currentCheckpointIndex ?? 0)
   const totalPoints = computed(() => authStore.team?.points ?? 0)
@@ -67,6 +68,10 @@ export const useGameStore = defineStore('game', () => {
       // Fetch fresh team data before restoring phase, to avoid stale Firestore state
       await authStore.refreshTeam()
 
+      // Subscribe to settings so bonus calculation always uses current values
+      settingsUnsubscribe?.()
+      settingsUnsubscribe = subscribeToSettings((s) => { gameSettings.value = s })
+      // Also fetch immediately (subscription fires async on first snapshot)
       gameSettings.value = await getSettings()
 
       // Two-day mode: use team's per-day ordered route if available
@@ -87,11 +92,25 @@ export const useGameStore = defineStore('game', () => {
       if (authStore.pseudo) {
         teamUnsubscribe?.()
         teamUnsubscribe = subscribeToTeam(authStore.pseudo, (data) => {
+          const prevDay = authStore.team?.day
           authStore.team = data
+          // When admin activates Day 2 while the player is on the waiting screen,
+          // automatically reload so Day 2 checkpoints are fetched.
+          if (prevDay === 1 && data.day === 2 && phase.value === 'day1complete') {
+            loadTrack()
+          }
         })
       }
 
-      startElapsedTimer()
+      const teamData = authStore.team
+      if (teamData?.isFinished || teamData?.day1Finished) {
+        // Team already done — compute final elapsed once, don't start the interval
+        const startedAt = teamData.startedAt?.toDate?.() ?? new Date()
+        const endedAt   = teamData.finishedAt?.toDate?.() ?? teamData.day1FinishedAt?.toDate?.() ?? new Date()
+        elapsedSeconds.value = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000)
+      } else {
+        startElapsedTimer()
+      }
     } catch (e) {
       error.value = e.message
     } finally {
@@ -102,7 +121,7 @@ export const useGameStore = defineStore('game', () => {
   // Phases that can be safely restored.
   // 'envelope2' intentionally excluded: if the session was interrupted there,
   // the user restarts from envelope1 to avoid skipping verification.
-  const RESTORABLE_PHASES = new Set(['stage1', 'bravo', 'stage2'])
+  const RESTORABLE_PHASES = new Set(['stage1', 'bravo', 'stage2', 'tapis'])
 
   const persistPhase = (p, qIdx = 0) => {
     if (authStore.pseudo) saveTeamPhase(authStore.pseudo, p, qIdx).catch(() => {})
@@ -111,7 +130,10 @@ export const useGameStore = defineStore('game', () => {
   const loadCurrentCheckpoint = async () => {
     const idx = authStore.team?.currentCheckpointIndex ?? 0
     if (idx >= checkpoints.value.length) {
-      phase.value = 'finished'
+      // Could be the tapis phase (post-last checkpoint, awaiting final verification)
+      const saved = authStore.team?.currentPhase
+      currentCheckpoint.value = null
+      phase.value = saved === 'tapis' ? 'tapis' : 'finished'
       return
     }
     currentCheckpoint.value = checkpoints.value[idx]
@@ -213,7 +235,13 @@ export const useGameStore = defineStore('game', () => {
     await authStore.refreshTeam()
     currentQuestionIndex.value = 0
     stage2Result.value = checkpointDelta.value >= 0 ? 'correct' : 'wrong'
-    phase.value = 'result'
+    const nextIndex = authStore.team?.currentCheckpointIndex ?? 0
+    if (nextIndex >= checkpoints.value.length) {
+      // Last checkpoint — go directly to finish, skip intermediate result screen
+      await advanceToNext()
+    } else {
+      phase.value = 'result'
+    }
   }
 
   const SKIP_COST = 30
@@ -246,22 +274,18 @@ export const useGameStore = defineStore('game', () => {
       await authStore.refreshTeam()
       const nextIndex = authStore.team?.currentCheckpointIndex ?? 0
       if (nextIndex >= checkpoints.value.length) {
-        clearInterval(timerInterval)
-        const parSeconds = (gameSettings.value.timeBonusPar ?? 90) * 60
-        const maxBonus   = gameSettings.value.timeBonusMax ?? 100
-        const bonus = Math.max(0, Math.round(maxBonus * (1 - elapsedSeconds.value / parSeconds)))
-        timeBonus.value = bonus
+        // Check the tapis keyword relevant to the current day
         const currentDay = authStore.team?.day ?? 1
-        if (currentDay === 1 && authStore.team?.day1Order?.length) {
-          // Two-day mode: Day 1 complete — wait for admin to activate Day 2
-          await markDay1Complete(authStore.pseudo, bonus)
-          await authStore.refreshTeam()
-          phase.value = 'day1complete'
-        } else {
-          await markTeamFinished(authStore.pseudo, bonus)
-          await authStore.refreshTeam()
-          phase.value = 'finished'
+        const tapisKw = currentDay === 2
+          ? (gameSettings.value.tapiskeywordDay2 ?? '').trim()
+          : (gameSettings.value.tapiskeyword    ?? '').trim()
+        if (tapisKw) {
+          currentCheckpoint.value = null
+          phase.value = 'tapis'
+          persistPhase('tapis')
+          return
         }
+        await _finalizeGame()
       } else {
         await loadCurrentCheckpoint()
       }
@@ -270,9 +294,125 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
+  // Shared end-game logic (used by advanceToNext and completeTapis)
+  const _finalizeGame = async () => {
+    clearInterval(timerInterval)
+    const parSeconds = Math.max(1, (gameSettings.value.timeBonusPar ?? 90) * 60)
+    const maxBonus   = gameSettings.value.timeBonusMax ?? 100
+    const bonus = Math.max(0, Math.round(maxBonus * (1 - elapsedSeconds.value / parSeconds)))
+    timeBonus.value = bonus
+    const currentDay = authStore.team?.day ?? 1
+    const hasDay2Route = (authStore.team?.day2Order?.length ?? 0) > 0
+    if (currentDay === 1 && authStore.team?.day1Order?.length && hasDay2Route) {
+      await markDay1Complete(authStore.pseudo, bonus)
+      await authStore.refreshTeam()
+      phase.value = 'day1complete'
+    } else {
+      await markTeamFinished(authStore.pseudo, bonus)
+      await authStore.refreshTeam()
+      phase.value = 'finished'
+    }
+  }
+
+  // Multi-field stage1: inputs can be in any order, no duplicates allowed.
+  // Uses greedy bipartite matching — sufficient for non-overlapping keyword sets.
+  const _matchMultiField = (cleanedInputs, pools) => {
+    const used = new Array(pools.length).fill(false)
+    for (const inp of cleanedInputs) {
+      let matched = false
+      for (let j = 0; j < pools.length; j++) {
+        if (!used[j] && pools[j].includes(inp)) {
+          used[j] = true
+          matched = true
+          break
+        }
+      }
+      if (!matched) return false
+    }
+    return used.every(Boolean)
+  }
+
+  const validateStage1Multi = async (inputs) => {
+    const cp = currentCheckpoint.value
+    const clean = s => s.trim().toLowerCase()
+    const cleaned = inputs.map(clean)
+
+    if (new Set(cleaned).size !== cleaned.length) return false
+
+    const keywords = cp?.stage1Keywords ?? []
+    const pools = keywords.map(kw => [
+      ...(kw.he ?? '').split(','),
+      ...(kw.en ?? '').split(','),
+    ].map(clean).filter(Boolean))
+
+    const correct = _matchMultiField(cleaned, pools)
+    if (correct) {
+      const pts = cp?.pointsCorrect ?? 5
+      checkpointDelta.value += pts
+      pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
+      await adjustPoints(authStore.pseudo, pts)
+      await authStore.refreshTeam()
+      setTimeout(() => {
+        phase.value = 'bravo'
+        persistPhase('bravo')
+      }, 600)
+    } else {
+      checkpointDelta.value -= 1
+      pointsAnimation.value = { pts: -1, seq: pointsAnimation.value.seq + 1 }
+      await adjustPoints(authStore.pseudo, -1)
+      await authStore.refreshTeam()
+    }
+    return correct
+  }
+
+  const validateTapis = (input) => {
+    const clean = s => s.trim().toLowerCase()
+    const isDay2 = (authStore.team?.day ?? 1) === 2
+    const kwHe = isDay2 ? (gameSettings.value.tapiskeywordDay2   ?? '') : (gameSettings.value.tapiskeyword   ?? '')
+    const kwEn = isDay2 ? (gameSettings.value.tapiskeywordEnDay2 ?? '') : (gameSettings.value.tapiskeywordEn ?? '')
+    const pool = [...kwHe.split(','), ...kwEn.split(',')].map(clean).filter(Boolean)
+    return pool.includes(clean(input))
+  }
+
+  // ── Pre-launch missions ───────────────────────────────────────────────────────
+  const answerPreLaunchMission = async (isCorrect, bonusPoints = 0, mission = {}) => {
+    if (!authStore.pseudo) return
+    const pts = isCorrect
+      ? (mission.pointsCorrect ?? 5) + bonusPoints
+      : -(mission.pointsWrong ?? 1)
+    pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
+    await adjustPoints(authStore.pseudo, pts)
+    await authStore.refreshTeam()
+  }
+
+  const completePreLaunch = async () => {
+    if (!authStore.pseudo) return
+    await setPreLaunchDone(authStore.pseudo)
+    await authStore.refreshTeam()
+  }
+
+  // True from when completeTapis starts until PhaseFinished/Day1Complete is mounted.
+  // GameView uses this to show a bridging overlay so there's no black-screen gap.
+  const finishingGame = ref(false)
+
+  const completeTapis = async () => {
+    error.value = null
+    finishingGame.value = true
+    try {
+      await authStore.refreshTeam()
+      await _finalizeGame()
+      finishingGame.value = false
+    } catch (e) {
+      error.value = e.message
+      finishingGame.value = false
+    }
+  }
+
   const startElapsedTimer = () => {
     clearInterval(timerInterval)
     const startedAt = authStore.team?.startedAt?.toDate?.() ?? new Date()
+    // Set immediately so elapsedSeconds is correct even before the first tick
+    elapsedSeconds.value = Math.floor((Date.now() - startedAt.getTime()) / 1000)
     timerInterval = setInterval(() => {
       elapsedSeconds.value = Math.floor((Date.now() - startedAt.getTime()) / 1000)
     }, 1000)
@@ -281,6 +421,7 @@ export const useGameStore = defineStore('game', () => {
   const cleanup = () => {
     clearInterval(timerInterval)
     teamUnsubscribe?.()
+    settingsUnsubscribe?.()
   }
 
   const formatTime = (seconds) => {
@@ -296,8 +437,11 @@ export const useGameStore = defineStore('game', () => {
     phase, stage2Result, lastPointsDelta, checkpointDelta, pointsAnimation, awardBonus,
     questions, currentQuestion, currentQuestionIndex,
     elapsedSeconds, timeBonus, gameSettings, currentIndex, totalPoints, isFinished, progress,
+    finishingGame,
     loadTrack, loadCurrentCheckpoint, openEnvelope1, validateStage1,
     advanceToBravo, openEnvelope2, answerQuestion, advanceQuestion,
     finishAllQuestions, advanceToNext, skipStage1, skipCheckpoint, SKIP_COST, cleanup, formatTime,
+    validateStage1Multi, validateTapis, completeTapis,
+    answerPreLaunchMission, completePreLaunch,
   }
 })

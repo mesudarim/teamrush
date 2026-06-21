@@ -28,11 +28,27 @@ const youtubeEmbedUrl = computed(() => {
 })
 
 onMounted(async () => {
-  settings.value = await getSettings()
-  loading.value = false
+  const passed = history.state?.settings
+  if (passed) {
+    try { settings.value = JSON.parse(passed) } catch {}
+    loading.value = false
+  } else {
+    settings.value = await getSettings()
+    loading.value = false
+  }
 })
 
-const proceed = () => router.push({ name: 'Game' })
+const proceed = () => {
+  const isDay2 = auth.team?.day === 2
+  const missionKey = isDay2 ? 'preLaunchDay2Missions' : 'preLaunchDay1Missions'
+  const missions = settings.value?.[missionKey] ?? []
+  const done = auth.team?.preLaunchDone ?? false
+  if (missions.length > 0 && !done) {
+    router.push({ name: 'PreLaunch' })
+  } else {
+    router.push({ name: 'Game' })
+  }
+}
 </script>
 
 <template>
@@ -40,8 +56,8 @@ const proceed = () => router.push({ name: 'Game' })
     <!-- Header -->
     <div class="flex justify-between items-center px-6 py-4">
       <div class="flex items-center gap-2">
-        <div class="w-9 h-9 bg-amber-500 rounded-xl flex items-center justify-center overflow-hidden">
-          <img src="@/assets/harpe.png" alt="logo" class="w-7 h-7 object-contain" style="mix-blend-mode: multiply;" />
+        <div class="w-10 h-10 rounded-full overflow-hidden shrink-0">
+          <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-cover" />
         </div>
         <span class="font-bold text-amber-400 text-xl hidden sm:block" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ t('app.name') }}</span>
       </div>
@@ -51,43 +67,40 @@ const proceed = () => router.push({ name: 'Game' })
       </div>
     </div>
 
-    <div class="flex-1 flex flex-col items-center justify-center px-4 pb-8">
-      <div v-if="loading" class="flex items-center justify-center flex-1">
+      <!-- Loading -->
+      <div v-if="loading" class="flex-1 flex items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
 
-      <div v-else class="w-full max-w-2xl animate-fade-in">
-        <div class="text-center mb-6">
-          <h1 class="text-2xl font-bold text-white" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ t('intro.title') }}</h1>
-          <p class="text-slate-400 text-sm mt-1">{{ t('intro.subtitle') }}</p>
+      <!-- Fullscreen video overlay -->
+      <div v-else-if="youtubeEmbedUrl"
+           class="fixed inset-0 z-50 bg-black flex flex-col">
+        <!-- iframe fills the whole screen -->
+        <iframe
+          :src="youtubeEmbedUrl"
+          class="flex-1 w-full border-0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowfullscreen
+        />
+        <!-- Continue button pinned at bottom -->
+        <div class="shrink-0 p-4 bg-black">
+          <button @click="proceed" class="btn-primary w-full text-lg py-4">
+            {{ t('intro.continueBtn') }} 🚀
+          </button>
         </div>
-
-        <!-- Video embed -->
-        <div v-if="youtubeEmbedUrl" class="relative w-full rounded-2xl overflow-hidden shadow-2xl bg-black mb-6" style="padding-bottom: 56.25%;">
-          <iframe
-            :src="youtubeEmbedUrl"
-            class="absolute inset-0 w-full h-full"
-            frameborder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowfullscreen
-          />
-        </div>
-
-        <!-- No video placeholder -->
-        <div v-else class="relative w-full rounded-2xl overflow-hidden shadow-2xl bg-slate-800 border border-slate-700 mb-6 flex items-center justify-center" style="min-height:220px;">
-          <div class="text-center text-slate-500">
-            <svg class="w-16 h-16 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.069A1 1 0 0121 8.845v6.31a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-            </svg>
-            <p class="text-sm">No intro video configured</p>
-          </div>
-        </div>
-
-        <button @click="proceed" class="btn-primary w-full text-lg py-4">
-          {{ t('intro.continueBtn') }}
-          <span class="ms-2">🚀</span>
-        </button>
       </div>
-    </div>
+
+      <!-- No video: show normal card -->
+      <div v-else class="flex-1 flex flex-col items-center justify-center px-4 pb-8">
+        <div class="w-full max-w-sm animate-fade-in text-center space-y-6">
+          <div>
+            <h1 class="text-2xl font-bold text-white">{{ t('intro.title') }}</h1>
+            <p class="text-slate-400 text-sm mt-1">{{ t('intro.subtitle') }}</p>
+          </div>
+          <button @click="proceed" class="btn-primary w-full text-lg py-4">
+            {{ t('intro.continueBtn') }} 🚀
+          </button>
+        </div>
+      </div>
   </div>
 </template>

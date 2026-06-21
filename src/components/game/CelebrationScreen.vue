@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useGameStore } from '@/stores/game'
 
@@ -7,11 +7,16 @@ const { t, tm } = useI18n()
 const game = useGameStore()
 
 const bravoMessage = ref('')
+let autoAdvanceTimer = null
 
 onMounted(() => {
   const msgs = tm('game.bravo.messages')
   bravoMessage.value = msgs[Math.floor(Math.random() * msgs.length)]
-  setTimeout(() => game.advanceToBravo(), 3500)
+  autoAdvanceTimer = setTimeout(() => game.advanceToBravo(), 3500)
+})
+
+onUnmounted(() => {
+  clearTimeout(autoAdvanceTimer)
 })
 </script>
 

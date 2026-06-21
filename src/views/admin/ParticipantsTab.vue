@@ -2,9 +2,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createParticipant, bulkCreateParticipants, deleteParticipant, subscribeToParticipants } from '@/firebase/firestore'
+import { useAdminStore } from '@/stores/admin'
 import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 
 const { t } = useI18n()
+const admin = useAdminStore()
 
 const participants = ref([])
 const search = ref('')
@@ -27,6 +29,27 @@ onUnmounted(() => unsubscribe?.())
 
 const sortCol = ref('status')  // default: active first
 const sortDir = ref('desc')
+
+// Cross-reference with team data for accurate status
+const teamMap = computed(() => {
+  const map = {}
+  admin.teams.forEach(t => { map[t.id] = t })
+  return map
+})
+
+// 'finished' | 'day1done' | 'inGame' | 'waiting'
+// Source of truth: teams collection (same as Monitor), NOT participant.loggedIn
+// loggedIn goes stale when users close their browser without logging out
+const teamStatus = (p) => {
+  const team = teamMap.value[p.id]
+  if (team?.isFinished || p.finished) return 'finished'
+  if (team?.day1Finished) return 'day1done'
+  if (team) return 'inGame'   // team exists = participant logged in at some point and is playing
+  return 'waiting'             // no team = never logged in
+}
+
+// Sort priority: inGame (3) > waiting (2) > day1done (1) > finished (0)
+const statusOrder = { inGame: 3, waiting: 2, day1done: 1, finished: 0 }
 
 function toggleSort(col) {
   if (sortCol.value === col) {
@@ -61,13 +84,13 @@ const filtered = computed(() => {
     } else if (sortCol.value === 'phone') {
       cmp = (a.phone ?? '').localeCompare(b.phone ?? '')
     } else if (sortCol.value === 'status') {
-      cmp = (a.loggedIn ? 1 : 0) - (b.loggedIn ? 1 : 0)
+      cmp = (statusOrder[teamStatus(a)] ?? 0) - (statusOrder[teamStatus(b)] ?? 0)
     }
     return sortDir.value === 'asc' ? cmp : -cmp
   })
 })
 
-const loggedInCount = computed(() => participants.value.filter(p => p.loggedIn).length)
+const loggedInCount = computed(() => participants.value.filter(p => teamStatus(p) === 'inGame').length)
 
 const addOne = async () => {
   if (!form.value.name.trim()) return
@@ -250,8 +273,17 @@ Mike Ben-David, mike@example.com, +972501234567"
             <td class="px-4 py-3 text-slate-400 hidden sm:table-cell">{{ p.email || '—' }}</td>
             <td class="px-4 py-3 text-slate-400 hidden md:table-cell">{{ p.phone || '—' }}</td>
             <td class="px-4 py-3 text-center">
-              <span :class="['inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold', p.loggedIn ? 'bg-green-500/15 text-green-400' : 'bg-slate-700 text-slate-400']">
-                {{ p.loggedIn ? '● ' + t('admin.participants.inGame') : '○ ' + t('admin.participants.waiting') }}
+              <span :class="[
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold',
+                teamStatus(p) === 'finished'  ? 'bg-green-500/15 text-green-400' :
+                teamStatus(p) === 'day1done'  ? 'bg-orange-500/15 text-orange-400' :
+                teamStatus(p) === 'inGame'    ? 'bg-blue-500/15 text-blue-400' :
+                'bg-slate-700 text-slate-400'
+              ]">
+                {{ teamStatus(p) === 'finished' ? '✓ ' + t('admin.monitor.finished') :
+                   teamStatus(p) === 'day1done' ? '◑ ' + t('admin.monitor.day1done') :
+                   teamStatus(p) === 'inGame'   ? '● ' + t('admin.participants.inGame') :
+                   '○ ' + t('admin.participants.waiting') }}
               </span>
             </td>
             <td class="px-4 py-3 text-end">

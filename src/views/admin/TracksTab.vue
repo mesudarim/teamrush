@@ -101,7 +101,7 @@ const cpName = (id) => admin.checkpoints.find((c) => c.id === id)?.title ?? id
             {{ track.isActive ? t('admin.tracks.active') : t('admin.tracks.inactive') }}
           </span>
         </div>
-        <p v-if="track.description" class="text-slate-400 text-sm mb-3">{{ track.description }}</p>
+        <p v-if="track.description" class="text-slate-400 text-sm mb-3 whitespace-pre-line">{{ track.description }}</p>
         <div class="mb-4 space-y-1">
           <div v-if="track.checkpointIds?.length" class="space-y-1">
             <div

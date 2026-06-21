@@ -1,6 +1,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const emit = defineEmits(['decoded', 'error', 'close'])
 
 const videoEl = ref(null)
@@ -27,8 +29,8 @@ onMounted(async () => {
   } catch (e) {
     status.value = 'error'
     errorMsg.value = e.name === 'NotAllowedError'
-      ? 'Accès caméra refusé. Autorisez la caméra dans les paramètres du navigateur.'
-      : 'Impossible d\'accéder à la caméra.'
+      ? t('ui.qrScanner.errorDenied')
+      : t('ui.qrScanner.errorGeneric')
     emit('error', errorMsg.value)
   }
 })
@@ -67,7 +69,7 @@ onUnmounted(stop)
   <div class="fixed inset-0 z-50 bg-black flex flex-col">
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 bg-black/80 backdrop-blur">
-      <span class="text-white font-semibold">Scanner le QR Code</span>
+      <span class="text-white font-semibold">{{ t('ui.qrScanner.title') }}</span>
       <button @click="stop(); $emit('close')" class="text-slate-400 hover:text-white p-1">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -103,7 +105,7 @@ onUnmounted(stop)
         <div class="bg-slate-800 rounded-2xl p-6 text-center max-w-sm space-y-4">
           <div class="text-4xl">📷</div>
           <p class="text-slate-300 text-sm">{{ errorMsg }}</p>
-          <button @click="$emit('close')" class="btn-secondary w-full">Fermer</button>
+          <button @click="$emit('close')" class="btn-secondary w-full">{{ t('common.close') }}</button>
         </div>
       </div>
 
@@ -114,14 +116,14 @@ onUnmounted(stop)
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
           </svg>
-          <p class="text-sm text-slate-400">Démarrage de la caméra…</p>
+          <p class="text-sm text-slate-400">{{ t('ui.qrScanner.starting') }}</p>
         </div>
       </div>
     </div>
 
     <!-- Footer hint -->
     <div v-if="status === 'scanning'" class="px-4 py-3 text-center bg-black/80">
-      <p class="text-slate-400 text-sm">Placez le QR code dans le cadre</p>
+      <p class="text-slate-400 text-sm">{{ t('ui.qrScanner.hint') }}</p>
     </div>
   </div>
 </template>

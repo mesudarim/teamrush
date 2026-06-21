@@ -2,8 +2,10 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseMission from './BaseMission.vue'
+import { useSound } from '@/composables/useSound'
 
 const { t, locale } = useI18n()
+const { playCorrect, playWrong } = useSound()
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
@@ -35,11 +37,13 @@ const submit = () => {
   if (!answer.value.trim() || solved.value) return
   if (isMatch(answer.value)) {
     solved.value = true
+    playCorrect()
     emit('correct')
   } else {
     wrongCount.value++
     showError.value = true
     answer.value = ''
+    playWrong()
     emit('wrong')
     setTimeout(() => { showError.value = false }, 1600)
   }
@@ -48,7 +52,7 @@ const submit = () => {
 
 <template>
   <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
-    <div class="space-y-4">
+    <div class="space-y-5">
 
       <!-- Clue image -->
       <div v-if="imageUrl" class="rounded-2xl overflow-hidden border border-slate-700 bg-slate-900">
@@ -61,7 +65,7 @@ const submit = () => {
 
       <!-- Specific question/instruction -->
       <div v-if="questionText" class="bg-slate-900/60 rounded-xl px-4 py-3 border border-slate-700 text-center">
-        <p class="text-white font-bold text-base leading-snug">{{ questionText }}</p>
+        <p class="text-white font-bold text-base leading-snug whitespace-pre-line">{{ questionText }}</p>
       </div>
 
       <!-- Success -->

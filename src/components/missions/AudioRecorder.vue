@@ -5,9 +5,11 @@ import { useAuthStore } from '@/stores/auth'
 import { uploadAudioRecording } from '@/firebase/storage'
 import { saveAudioRecord } from '@/firebase/firestore'
 import BaseMission from './BaseMission.vue'
+import { useSound } from '@/composables/useSound'
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const { playCorrect } = useSound()
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
@@ -24,6 +26,7 @@ const instructionOverride = computed(() => {
     case 'checking':   return t('missions.audioRecorder.instructionChecking')
     case 'recorded':
     case 'retry':
+    case 'approved':
     case 'uploading':
     case 'done':       return ''
     default:           return null  // null = afficher l'instruction originale du checkpoint
@@ -109,11 +112,8 @@ const startRecording = async () => {
     audioUrl.value = URL.createObjectURL(blob)
     mediaRecorder._blob = blob
     stopStream()
-    if (attemptCount.value === 0) {
-      startFakeCheck()
-    } else {
-      state.value = 'recorded'
-    }
+    // Always run the fake check; pass = true on the second attempt
+    startFakeCheck(attemptCount.value >= 1)
   }
 
   mediaRecorder.start(100)
@@ -144,7 +144,7 @@ const retake = () => {
   state.value = 'idle'
 }
 
-const startFakeCheck = () => {
+const startFakeCheck = (passes = false) => {
   state.value = 'checking'
   checkingProgress.value = 0
   checkingStep.value = 0
@@ -158,8 +158,14 @@ const startFakeCheck = () => {
     clearInterval(checkingInterval)
     checkingProgress.value = 100
     setTimeout(() => {
-      state.value = 'retry'
-      attemptCount.value++
+      if (passes) {
+        state.value = 'approved'
+        // After 2.5s on the encouragement screen, move to the preview
+        checkingTimeout = setTimeout(() => { state.value = 'recorded' }, 2500)
+      } else {
+        state.value = 'retry'
+        attemptCount.value++
+      }
     }, 300)
   }, 5000)
 }
@@ -182,6 +188,7 @@ const submit = async () => {
       durationSeconds: elapsed.value,
     })
     state.value = 'done'
+    playCorrect()
     emit('correct')
   } catch {
     error.value = t('missions.audioRecorder.uploadError')
@@ -311,6 +318,22 @@ onUnmounted(() => {
         <button @click="retake" class="w-full btn-primary py-3 font-bold text-lg">
           🎙️ {{ t('missions.audioRecorder.retakeBtn') }}
         </button>
+      </div>
+
+      <!-- ── APPROVED (encouragement after second attempt passes) ── -->
+      <div v-if="state === 'approved'" class="flex flex-col items-center gap-4 py-2 text-center">
+        <div class="text-6xl animate-bounce">🎉</div>
+        <p class="text-green-400 font-bold text-xl"
+           style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
+          {{ t('missions.audioRecorder.approvedTitle') }}
+        </p>
+        <p class="text-slate-300 text-sm leading-relaxed"
+           style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
+          {{ t('missions.audioRecorder.approvedMsg') }}
+        </p>
+        <div class="w-full bg-slate-700 rounded-full h-3 overflow-hidden">
+          <div class="h-full bg-gradient-to-r from-green-500 to-green-300 rounded-full w-full transition-all duration-500" />
+        </div>
       </div>
 
       <!-- ── UPLOADING ── -->

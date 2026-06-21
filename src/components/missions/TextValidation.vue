@@ -3,9 +3,11 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseMission from './BaseMission.vue'
 import { useGameStore } from '@/stores/game'
+import { useSound } from '@/composables/useSound'
 
 const { t, locale } = useI18n()
 const game = useGameStore()
+const { playCorrect, playWrong } = useSound()
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
@@ -139,11 +141,13 @@ const submit = async () => {
       await game.awardBonus(remaining.value)
     }
 
+    playCorrect()
     emit('correct')
   } else {
     wrongAttempts.value++
     showError.value = true
     answer.value = ''
+    playWrong()
     emit('wrong')
     setTimeout(() => { showError.value = false }, 1600)
   }
@@ -152,7 +156,7 @@ const submit = async () => {
 
 <template>
   <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
-    <div class="space-y-4">
+    <div class="space-y-5">
 
       <!-- ── Pre-start screen (timed missions only) ── -->
       <Transition name="fade" mode="out-in">
@@ -162,30 +166,47 @@ const submit = async () => {
             <h3 class="font-bold text-white text-lg mb-1" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ t('missions.textValidation.timedTitle') }}</h3>
             <p class="text-slate-300 text-sm leading-relaxed">{{ t('missions.textValidation.timedBody') }}</p>
           </div>
-          <div class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 font-bold text-base">
-            ⏳ {{ totalDisplay }}
+
+          <!-- Max bonus at stake — visually prominent -->
+          <div class="rounded-2xl bg-amber-500/10 border border-amber-500/40 px-5 py-4 space-y-1">
+            <div class="text-amber-400 font-black tabular-nums" style="font-size: clamp(2rem, 12vw, 3.5rem);">
+              +{{ timerTotal }}
+            </div>
+            <div class="text-amber-300 text-xs font-semibold tracking-wide uppercase">
+              {{ t('missions.textValidation.timedMaxBonus') }}
+            </div>
+            <div class="text-slate-400 text-xs">
+              ⏳ {{ totalDisplay }} · {{ t('missions.textValidation.timedRate') }}
+            </div>
           </div>
+
           <button @click="startMission" class="btn-primary w-full py-4 text-base font-bold" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
             {{ t('missions.textValidation.startBtn') }}
           </button>
         </div>
 
         <!-- ── Active mission ── -->
-        <div v-else key="active" class="space-y-4">
+        <div v-else key="active" class="space-y-5">
 
       <!-- ── Timer ── -->
       <Transition name="fade">
         <div v-if="timerEnabled && !solved" class="text-center">
+          <!-- Countdown -->
           <div :class="['font-black tabular-nums leading-none transition-colors', timerColor]"
                style="font-size: clamp(3rem, 15vw, 5rem);">
             {{ timerDisplay }}
           </div>
-          <p v-if="remaining > 0" class="text-xs text-slate-400 mt-1">
-            {{ t('missions.textValidation.timerHint', { n: remaining }) }}
-          </p>
-          <p v-else class="text-xs text-red-400 font-semibold mt-1">
+
+          <!-- Live bonus — same color as timer, very visible -->
+          <div v-if="remaining > 0"
+               :class="['font-bold tabular-nums mt-1 transition-colors', timerColor]"
+               style="font-size: clamp(1.1rem, 5vw, 1.5rem);">
+            ⚡ +{{ remaining }} {{ t('missions.textValidation.bonusPtsSuffix') }}
+          </div>
+          <p v-else class="text-red-400 font-semibold mt-1 text-sm">
             {{ t('missions.textValidation.timerExpired') }}
           </p>
+
           <!-- Progress bar -->
           <div class="mt-2 h-1.5 bg-slate-700 rounded-full overflow-hidden">
             <div
@@ -199,7 +220,7 @@ const submit = async () => {
 
       <!-- Question text -->
       <div v-if="questionText" class="bg-slate-900/60 rounded-xl px-4 py-3 border border-slate-700 text-center">
-        <p class="text-white font-bold text-base leading-snug">{{ questionText }}</p>
+        <p class="text-white font-bold text-base leading-snug whitespace-pre-line">{{ questionText }}</p>
       </div>
 
       <!-- Bonus earned celebration -->
