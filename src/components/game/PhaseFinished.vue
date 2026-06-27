@@ -153,7 +153,7 @@ const goHome = async () => {
           </div>
         </div>
 
-        <button @click="router.push({ name: 'Leaderboard' })" class="btn-primary w-full text-lg py-4">
+        <button @click="router.push({ name: 'Leaderboard', query: { tab: 'day2' } })" class="btn-primary w-full text-lg py-4">
           {{ t('game.finished.leaderboardBtn') }}
           <span class="ms-2">📊</span>
         </button>

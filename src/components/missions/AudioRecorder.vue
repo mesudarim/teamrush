@@ -107,13 +107,19 @@ const startRecording = async () => {
   }
 
   mediaRecorder.onstop = () => {
-    const blob = new Blob(chunks, { type: mimeType.value })
-    if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
-    audioUrl.value = URL.createObjectURL(blob)
+    // Use the actual recorded MIME type (iOS may use audio/mp4 regardless of what we requested)
+    const actualMime = mediaRecorder.mimeType || mimeType.value
+    mimeType.value = actualMime
+    const blob = new Blob(chunks, { type: actualMime })
     mediaRecorder._blob = blob
     stopStream()
-    // Always run the fake check; pass = true on the second attempt
-    startFakeCheck(attemptCount.value >= 1)
+    // Convert to data URL — blob URLs don't play back on iOS Safari
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      audioUrl.value = reader.result
+      startFakeCheck(attemptCount.value >= 1)
+    }
+    reader.readAsDataURL(blob)
   }
 
   mediaRecorder.start(100)
@@ -134,7 +140,6 @@ const stopRecording = () => {
 const retake = () => {
   clearTimeout(checkingTimeout)
   clearInterval(checkingInterval)
-  if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
   audioUrl.value = null
   mediaRecorder = null
   elapsed.value = 0
@@ -201,7 +206,6 @@ onUnmounted(() => {
   clearInterval(checkingInterval)
   clearTimeout(checkingTimeout)
   stopStream()
-  if (audioUrl.value) URL.revokeObjectURL(audioUrl.value)
 })
 </script>
 
@@ -270,7 +274,7 @@ onUnmounted(() => {
             {{ t('missions.audioRecorder.preview') }}
             <span class="ms-auto text-slate-400 text-xs tabular-nums">{{ formatTime(elapsed) }}</span>
           </div>
-          <audio :src="audioUrl" controls class="w-full h-10" style="accent-color: #f59e0b;" />
+          <audio :src="audioUrl" controls playsinline preload="auto" class="w-full h-10" style="accent-color: #f59e0b;" />
         </div>
 
         <button

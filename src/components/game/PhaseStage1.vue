@@ -32,7 +32,6 @@ const skipping = ref(false)
 
 // ── Multi-field mode ──────────────────────────────────────────────────────────
 const multiValues = ref([])
-const multiDuplicate = ref(false)
 const initMulti = () => {
   const n = cp.value?.stage1Keywords?.length ?? 0
   multiValues.value = Array(n).fill('')
@@ -164,13 +163,6 @@ const submitMulti = async () => {
   const cleaned = multiValues.value.map(clean)
   // Check for empty fields
   if (cleaned.some(v => !v)) return
-  // Check for duplicates before sending to server
-  if (new Set(cleaned).size !== cleaned.length) {
-    multiDuplicate.value = true
-    setTimeout(() => { multiDuplicate.value = false }, 2000)
-    return
-  }
-  multiDuplicate.value = false
   checking.value = true
   const ok = await game.validateStage1Multi(multiValues.value)
   checking.value = false
@@ -318,11 +310,7 @@ const submitMulti = async () => {
 
           <!-- Feedback -->
           <Transition name="feedback">
-            <div v-if="multiDuplicate"
-                 class="flex items-center justify-center gap-2 p-3 rounded-xl text-sm font-semibold bg-orange-500/15 border border-orange-500/30 text-orange-400">
-              ⚠️ {{ t('game.stage1.multiFieldDuplicate') }}
-            </div>
-            <div v-else-if="submitted && !isCorrect"
+            <div v-if="submitted && !isCorrect"
                  class="flex items-center justify-center gap-2 p-3 rounded-xl text-sm font-semibold bg-red-500/15 border border-red-500/30 text-red-400">
               ❌ {{ t('game.stage1.multiFieldWrong') }}
             </div>

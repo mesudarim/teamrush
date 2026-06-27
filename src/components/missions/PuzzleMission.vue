@@ -185,7 +185,7 @@ const movesOverHalf = computed(() => count.value > MAX_MOVES * 0.75)
               <div class="text-6xl mb-3">🏆</div>
               <div class="text-2xl font-bold text-white mb-1">{{ t('missions.puzzleMission.bravo') }}</div>
               <div class="text-green-200 text-sm">{{ t('missions.puzzleMission.solved', { count }) }}</div>
-              <div class="text-3xl font-bold text-amber-300 mt-3">+{{ (checkpoint.pointsCorrect ?? 5) + (MAX_MOVES - count) }} pts</div>
+              <div class="text-3xl font-bold text-amber-300 mt-3">+{{ (checkpoint.pointsCorrect ?? 5) + (MAX_MOVES - count) }} {{ t('game.points') }}</div>
             </div>
           </div>
         </Transition>

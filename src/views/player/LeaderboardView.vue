@@ -1,22 +1,24 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useLeaderboardStore } from '@/stores/leaderboard'
 import { useAuthStore } from '@/stores/auth'
 import PlayerNav from '@/components/layout/PlayerNav.vue'
 
 const { t } = useI18n()
 const router = useRouter()
+const route  = useRoute()
 const lb   = useLeaderboardStore()
 const auth = useAuthStore()
 
-// 'day1' | 'day2' | 'total'
-const activeTab = ref('day1')
+// 'day1' | 'day2' | 'total' — caller can pre-select via ?tab=day2
+const VALID_TABS = new Set(['day1', 'day2', 'total'])
+const activeTab = ref(VALID_TABS.has(route.query.tab) ? route.query.tab : 'day1')
 
 const displayedTeams = computed(() => {
   if (!lb.isTwoDay) return lb.rankedTeams
-  if (activeTab.value === 'day2')  return lb.rankedTeamsDay2
+  if (activeTab.value === 'day2')  return lb.rankedTeamsDay2.filter(t => t.preLaunchDay2Done || t.isFinished)
   if (activeTab.value === 'total') return lb.rankedTeamsTotal
   return lb.rankedTeamsDay1
 })
@@ -44,10 +46,10 @@ onUnmounted(() => lb.cleanup())
           <button
             v-if="auth.isLoggedIn"
             @click="router.push({ name: 'Game' })"
-            class="w-9 h-9 rounded-xl bg-slate-700 hover:bg-slate-600 flex items-center justify-center transition-colors shrink-0"
+            class="w-11 h-11 rounded-xl bg-amber-500/20 border border-amber-500/40 hover:bg-amber-500/30 flex items-center justify-center transition-colors shrink-0"
           >
-            <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            <svg class="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
             </svg>
           </button>
           <div>

@@ -23,6 +23,7 @@ const imagePreview = ref('')
 const puzzleImageBlob = ref(null)
 const puzzleRawSrc = ref('')
 const showCropper = ref(false)
+const showMissionQr = ref(false)
 
 // ─── Stage 1 image (missingWord mode) ────────────────────────────────────────
 const stage1ImageBlob = ref(null)
@@ -47,7 +48,7 @@ function emptyForm() {
     showMap: false,
     mapImageUrl: '',
     mapLat: '', mapLng: '', mapZoom: 15,
-    envelopeBrand: 'המרוץ לצפון',
+    envelopeBrand: 'המירוץ לצפון',
     envelope1Label: 'יעד',
     envelope2Label: 'משימה',
     stage1Mode: 'text',
@@ -603,7 +604,7 @@ const stageModeLabel = (cp) => {
           <div class="grid md:grid-cols-3 gap-4">
             <div>
               <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.envelopeBrand') }}</label>
-              <input v-model="form.envelopeBrand" class="input-field text-center font-mono tracking-widest" placeholder="המרוץ לצפון" />
+              <input v-model="form.envelopeBrand" class="input-field text-center font-mono tracking-widest" placeholder="המירוץ לצפון" />
             </div>
             <div>
               <label class="block text-sm font-semibold text-amber-400 mb-1">{{ t('admin.checkpoints.envelope1Label') }}</label>
@@ -637,7 +638,7 @@ const stageModeLabel = (cp) => {
                 <div style="background:#fff; clip-path:polygon(9px 0%,calc(100% - 9px) 0%,100% 50%,calc(100% - 9px) 100%,9px 100%,0% 50%); padding:2px; margin-bottom:2%;">
                   <div style="background:#cc0010; clip-path:polygon(7px 0%,calc(100% - 7px) 0%,100% 50%,calc(100% - 7px) 100%,7px 100%,0% 50%); padding:2px 10px; display:flex; align-items:center; justify-content:center; min-width:50px;">
                     <span style="font-family:'Rubik','Arial Black',Arial,sans-serif; font-weight:900; font-size:0.38rem; color:#fff; letter-spacing:0.08em; white-space:nowrap;">
-                      {{ form.envelopeBrand || 'המרוץ לצפון' }}
+                      {{ form.envelopeBrand || 'המירוץ לצפון' }}
                     </span>
                   </div>
                 </div>
@@ -702,7 +703,7 @@ const stageModeLabel = (cp) => {
                 <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.stage1Keyword') }}</label>
                 <input v-model="form.stage1Keyword" class="input-field font-mono tracking-widest text-center text-lg" placeholder="keyword" />
               </div>
-              <QrCodeDisplay :value="form.stage1Keyword" :label="form.title" :brand="form.envelopeBrand || 'המרוץ לצפון'" />
+              <QrCodeDisplay :value="form.stage1Keyword" :label="form.title" :brand="form.envelopeBrand || 'המירוץ לצפון'" />
             </div>
           </template>
 
@@ -1051,6 +1052,29 @@ const stageModeLabel = (cp) => {
               <input v-model="form.missionConfig.questions[0].answer" class="input-field font-mono text-sm"
                      :placeholder="t('admin.missions.qrScanAnswerPlaceholder')" />
               <p class="text-xs text-slate-500 mt-1">{{ t('admin.missions.qrScanAnswerHint') }}</p>
+            </div>
+
+            <!-- QR code generator -->
+            <div>
+              <button
+                @click="showMissionQr = !showMissionQr"
+                :disabled="!form.missionConfig.questions[0].answer?.trim()"
+                class="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl border transition-colors disabled:opacity-40"
+                :class="showMissionQr ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'border-slate-600 bg-slate-800 text-slate-300 hover:text-amber-400'"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                </svg>
+                {{ showMissionQr ? 'Masquer le QR' : 'Générer le QR code' }}
+              </button>
+              <div v-if="showMissionQr" class="mt-3 flex justify-center">
+                <QrCodeDisplay
+                  :value="form.missionConfig.questions[0].answer"
+                  :label="form.title || 'mission'"
+                  :brand="form.envelopeBrand || 'נופש רשות 2026'"
+                />
+              </div>
             </div>
           </div>
 

@@ -1,12 +1,11 @@
 /**
- * Generates unique checkpoint routes for each team using a coprime-step
- * circular-shift algorithm on the full checkpoint list.
+ * Generates unique checkpoint routes for each team.
  *
- * Each team gets `checkpointsPerDay` checkpoints for Day 1 and the same
- * for Day 2, drawn from the full pool without repetition within a team.
- *
- * Coprime steps are computed dynamically for any pool size M.
- * Unique-route capacity = M × φ(M)  (M times Euler's totient of M).
+ * Strategy:
+ *  - First M×φ(M) teams: coprime-step circular-shift (guarantees every checkpoint
+ *    appears exactly once per position within each "family" of M teams).
+ *  - Teams beyond that: deterministic seeded Fisher-Yates shuffle (mulberry32 PRNG),
+ *    giving M! possible distinct orderings — effectively unlimited capacity.
  */
 
 function gcd(a, b) { return b === 0 ? a : gcd(b, a % b) }
@@ -19,59 +18,77 @@ function getCoprimeFamilies(n) {
   return steps
 }
 
+// Mulberry32 — fast, deterministic, good distribution
+function mulberry32(seed) {
+  let t = (seed >>> 0) + 0x6D2B79F5
+  return () => {
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function seededShuffle(arr, seed) {
+  const result = [...arr]
+  const rand = mulberry32(seed)
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
+}
+
 /**
  * @param {string[]} checkpointIds     All available checkpoint IDs (length M)
  * @param {number}   numTeams          Number of teams to generate routes for
  * @param {number}   checkpointsPerDay Checkpoints each team gets per day (includes final if set)
- * @param {string|null} finalCheckpointId  If set, this checkpoint is always placed last on each day
+ * @param {string|null} finalDay1Id    If set, pinned as the last checkpoint of every Day 1 route
+ * @param {string|null} finalDay2Id    If set, pinned as the last checkpoint of every Day 2 route
  * @returns {{ teamIndex: number, day1Order: string[], day2Order: string[] }[]}
  */
-export function generateRoutes(checkpointIds, numTeams, checkpointsPerDay, finalCheckpointId = null) {
-  // Exclude the final checkpoint from the random pool
-  const pool = finalCheckpointId
-    ? checkpointIds.filter(id => id !== finalCheckpointId)
-    : checkpointIds
+export function generateRoutes(checkpointIds, numTeams, checkpointsPerDay, finalDay1Id = null, finalDay2Id = null) {
+  // Exclude both finals from the random pool (de-duplicated if they happen to be the same)
+  const finalsToExclude = new Set([finalDay1Id, finalDay2Id].filter(Boolean))
+  const pool = checkpointIds.filter(id => !finalsToExclude.has(id))
 
-  const randomPerDay = finalCheckpointId ? checkpointsPerDay - 1 : checkpointsPerDay
+  const randomDay1 = checkpointsPerDay - (finalDay1Id ? 1 : 0)
+  const randomDay2 = checkpointsPerDay - (finalDay2Id ? 1 : 0)
   const M       = pool.length
-  const perTeam = randomPerDay * 2
+  const perTeam = randomDay1 + randomDay2
 
-  if (randomPerDay < 0 || perTeam > M) {
+  if (randomDay1 < 0 || randomDay2 < 0 || perTeam > M) {
     throw new Error(
-      `checkpointsPerDay (${checkpointsPerDay}) × 2 exceeds available checkpoints (${M}${finalCheckpointId ? ' after reserving the final checkpoint' : ''})`
+      `checkpointsPerDay (${checkpointsPerDay}) × 2 exceeds available checkpoints (${M}${finalsToExclude.size ? ` after reserving ${finalsToExclude.size} final checkpoint(s)` : ''})`
     )
   }
 
-  const families = getCoprimeFamilies(M)
-  const maxTeams = M * families.length
-  if (numTeams > maxTeams) {
-    throw new Error(
-      `Cannot generate ${numTeams} unique routes from ${M} checkpoints (max ${maxTeams})`
-    )
-  }
+  const families       = getCoprimeFamilies(M)
+  const maxCoprimeTeams = M * families.length
 
   const routes = []
 
   for (let i = 0; i < numTeams; i++) {
-    const familyIdx = Math.floor(i / M)
-    const offset    = i % M
-    const step      = families[familyIdx]
+    let selected
 
-    // Full circular permutation of the pool for this team
-    const indices = []
-    for (let k = 0; k < M; k++) {
-      indices.push((offset + k * step) % M)
+    if (i < maxCoprimeTeams) {
+      // ── Coprime-step circular permutation (optimal spreading) ──────────────
+      const familyIdx = Math.floor(i / M)
+      const offset    = i % M
+      const step      = families[familyIdx]
+      const indices   = Array.from({ length: M }, (_, k) => (offset + k * step) % M)
+      selected = indices.slice(0, perTeam).map(idx => pool[idx])
+    } else {
+      // ── Seeded Fisher-Yates fallback (capacity = M!, effectively unlimited) ─
+      selected = seededShuffle(pool, i).slice(0, perTeam)
     }
 
-    // Take only the random slots, split evenly across the two days
-    const selected  = indices.slice(0, perTeam).map(idx => pool[idx])
-    const day1Random = selected.slice(0, randomPerDay)
-    const day2Random = selected.slice(randomPerDay)
+    const day1Random = selected.slice(0, randomDay1)
+    const day2Random = selected.slice(randomDay1)
 
     routes.push({
       teamIndex: i,
-      day1Order: finalCheckpointId ? [...day1Random, finalCheckpointId] : day1Random,
-      day2Order: finalCheckpointId ? [...day2Random, finalCheckpointId] : day2Random,
+      day1Order: finalDay1Id ? [...day1Random, finalDay1Id] : day1Random,
+      day2Order: finalDay2Id ? [...day2Random, finalDay2Id] : day2Random,
     })
   }
 

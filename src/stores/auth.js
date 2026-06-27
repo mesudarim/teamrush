@@ -15,7 +15,7 @@ export const useAuthStore = defineStore('auth', () => {
   const pseudo = computed(() => team.value?.pseudo ?? null)
   const trackId = computed(() => team.value?.trackId ?? null)
 
-  const login = async (identifier, trackId) => {
+  const login = async (identifier, trackId, day = 1) => {
     isLoading.value = true
     error.value = null
     try {
@@ -27,7 +27,7 @@ export const useAuthStore = defineStore('auth', () => {
 
       // createTeam handles both new teams and returning players (updates displayName)
       // Returns local team data directly — avoids an extra getDoc round-trip
-      team.value = await createTeam(teamPseudo, trackId, found.name ?? '', found)
+      team.value = await createTeam(teamPseudo, trackId, found.name ?? '', found, day)
 
       // Fire-and-forget — admin visibility only, not needed for game to start
       updateParticipant(found.id, { loggedIn: true, teamId: teamPseudo, lastLoginAt: new Date() }).catch(() => {})
@@ -77,6 +77,14 @@ export const useAuthStore = defineStore('auth', () => {
     // Always fetch fresh data from Firestore so points/phase are current
     const data = await getTeam(savedPseudo)
     if (data) {
+      // Admin reset this Day 2 player — invalidate the stale session so they
+      // land on the Day 2 login page instead of jumping back into the game.
+      if (data.day === 2 && data.resetToken && !data.preLaunchDay2Done) {
+        localStorage.removeItem(PSEUDO_KEY)
+        localStorage.removeItem(PARTICIPANT_KEY)
+        localStorage.setItem('teamrush_login_day', '2')
+        return
+      }
       team.value = data
       if (savedParticipant) participant.value = JSON.parse(savedParticipant)
     } else {

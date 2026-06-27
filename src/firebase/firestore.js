@@ -64,6 +64,7 @@ import {
   arrayUnion,
   runTransaction,
   writeBatch,
+  deleteField,
 } from 'firebase/firestore'
 import { db } from './config'
 
@@ -107,11 +108,16 @@ export const updateParticipant = async (id, data) => {
 }
 
 export const deleteParticipant = async (id) => {
+  // Read participant first to get their team pseudo (teamId = pseudo, not the participant doc ID)
+  const participantSnap = await getDoc(doc(db, 'participants', id))
+  const teamPseudo = participantSnap.exists() ? participantSnap.data().teamId : null
+
   await deleteDoc(doc(db, 'participants', id))
-  // Also remove the team document if it exists (team ID = participant ID)
-  const teamRef = doc(db, 'teams', id)
-  const teamSnap = await getDoc(teamRef)
-  if (teamSnap.exists()) await deleteDoc(teamRef)
+
+  // Delete team document (stored at teams/{pseudo})
+  if (teamPseudo) {
+    await deleteDoc(doc(db, 'teams', teamPseudo))
+  }
 }
 
 export const subscribeToParticipants = (callback) =>
@@ -119,36 +125,46 @@ export const subscribeToParticipants = (callback) =>
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   )
 
-// Find a participant by name, email or phone (client-side filter — fine for <1000 people)
+// Find a participant by phone (or name/email as fallback)
 export const findParticipantByIdentifier = async (query_) => {
   const raw        = query_.trim()
-  const lower      = raw.toLowerCase()
-  const normalized = lower.replace(/[\s\-\.]/g, '')
+  const normalized = raw.replace(/[\s\-\.]/g, '')
+  const isDigitsOnly = /^\d+$/.test(normalized)
 
-  // Fast path: three targeted queries in parallel — covers name, email, and phone
-  const [nameSnap, emailSnap, phoneSnap] = await Promise.all([
-    getDocs(query(collection(db, 'participants'), where('name', '==', raw))),
-    getDocs(query(collection(db, 'participants'), where('email', '==', lower))),
-    getDocs(query(collection(db, 'participants'), where('phone', '==', normalized))),
-  ])
-  const fastDoc = [...nameSnap.docs, ...emailSnap.docs, ...phoneSnap.docs][0]
-  if (fastDoc) return { id: fastDoc.id, ...fastDoc.data() }
+  if (isDigitsOnly) {
+    // Login field is phone-only — single targeted query, much faster on mobile
+    const phoneSnap = await getDocs(query(collection(db, 'participants'), where('phone', '==', normalized)))
+    if (phoneSnap.docs.length > 0) {
+      const d = phoneSnap.docs[0]
+      return { id: d.id, ...d.data() }
+    }
+  } else {
+    // Non-digit input (admin testing) — query name and email in parallel
+    const lower = raw.toLowerCase()
+    const [nameSnap, emailSnap] = await Promise.all([
+      getDocs(query(collection(db, 'participants'), where('name', '==', raw))),
+      getDocs(query(collection(db, 'participants'), where('email', '==', lower))),
+    ])
+    const fastDoc = [...nameSnap.docs, ...emailSnap.docs][0]
+    if (fastDoc) return { id: fastDoc.id, ...fastDoc.data() }
+  }
 
-  // Fallback: full scan for case-insensitive name or alternate email casing
+  // Fallback: full scan (handles format mismatches, e.g. stored without country code)
+  const lower = raw.toLowerCase()
   const snap = await getDocs(collection(db, 'participants'))
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
     .find(p =>
+      p.phone?.replace(/[\s\-\.]/g, '') === normalized ||
       p.name?.trim().toLowerCase() === lower ||
-      p.email?.toLowerCase().replace(/[\s\-\.]/g, '') === normalized ||
-      p.phone?.replace(/[\s\-\.]/g, '') === normalized
+      p.email?.toLowerCase().replace(/[\s\-\.]/g, '') === normalized
     ) ?? null
 }
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
 // participant is the full participant document — used to copy pre-assigned routes on first login
-export const createTeam = async (pseudo, trackId, displayName = '', participant = null) => {
+export const createTeam = async (pseudo, trackId, displayName = '', participant = null, day = 1) => {
   const ref = doc(db, 'teams', pseudo)
   const existing = await getDoc(ref)
 
@@ -156,23 +172,38 @@ export const createTeam = async (pseudo, trackId, displayName = '', participant 
   const resolvedTrackId = participant?.assignedTrackId ?? trackId
 
   if (existing.exists()) {
+    const existingData = existing.data()
+
+    // Block replay: player already finished this day
+    if (day === 1 && existingData.day1Finished) throw new Error('DAY1_ALREADY_FINISHED')
+    if (day === 2 && existingData.day === 2 && existingData.isFinished) throw new Error('DAY2_ALREADY_FINISHED')
+
     const updateData = { displayName, updatedAt: serverTimestamp() }
+
     // Copy routes if team doesn't have them yet but participant does
-    if (participant?.day1Order?.length && !existing.data().day1Order?.length) {
+    if (participant?.day1Order?.length && !existingData.day1Order?.length) {
       updateData.day1Order = participant.day1Order
       updateData.day2Order = participant.day2Order
-      updateData.day = participant.day ?? 1
       updateData.trackId = resolvedTrackId
     }
+
+    // Switch day if the login URL is for a different day — reset progress for the new day
+    if (day !== (existingData.day ?? 1)) {
+      updateData.day = day
+      updateData.currentCheckpointIndex = 0
+      updateData.currentPhase = null
+      updateData.isFinished = false
+    }
+
     await updateDoc(ref, updateData)
-    // Return merged data (updatedAt approximated locally; refreshTeam() will fetch exact value)
-    return { id: pseudo, ...existing.data(), ...updateData, updatedAt: new Date() }
+    return { id: pseudo, ...existingData, ...updateData, updatedAt: new Date() }
   }
 
   const teamData = {
     pseudo,
     trackId: resolvedTrackId,
     displayName,
+    day,
     currentCheckpointIndex: 0,
     points: 0,
     startedAt: serverTimestamp(),
@@ -185,17 +216,75 @@ export const createTeam = async (pseudo, trackId, displayName = '', participant 
   if (participant?.day1Order?.length) {
     teamData.day1Order = participant.day1Order
     teamData.day2Order = participant.day2Order
-    teamData.day = participant.day ?? 1
   }
 
   await setDoc(ref, teamData)
-  // Return local copy with Date approximations (refreshTeam() replaces with server Timestamps)
   return { id: pseudo, ...teamData, startedAt: new Date(), updatedAt: new Date() }
 }
 
 export const getTeam = async (pseudo) => {
   const snap = await getDoc(doc(db, 'teams', pseudo))
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
+}
+
+// Switch a logged-in team to a different day (used when player opens /day2 while already logged in)
+export const switchTeamDay = async (pseudo, day) => {
+  const ref = doc(db, 'teams', pseudo)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return
+
+  const data = snap.data()
+  // Block replay of a completed Day 2 (login-level guard; viewing end screen is fine)
+  if (day === 2 && data.isFinished) throw new Error('DAY2_ALREADY_FINISHED')
+
+  const currentDay = data.day ?? 1
+  if (currentDay === day) return  // already on this day, nothing to do
+
+  // Save current day's progress, restore the target day's saved progress.
+  // This lets players switch between Day 1 and Day 2 URLs and land exactly
+  // where they left off in each day.
+  const updates = { day, updatedAt: serverTimestamp() }
+
+  if (currentDay === 1 && day === 2) {
+    updates.day1SavedIndex = data.currentCheckpointIndex ?? 0
+    updates.day1SavedPhase = data.currentPhase ?? null
+    // Snapshot Day 1 final score so Day 2 play doesn't overwrite it
+    if (!data.day1Points) updates.day1Points = data.points ?? 0
+    updates.currentCheckpointIndex = data.day2SavedIndex ?? 0
+    updates.currentPhase = data.day2SavedPhase ?? null
+    updates.points = 0   // reset running score for Day 2
+    updates.isFinished = false
+  } else if (currentDay === 2 && day === 1) {
+    updates.day2SavedIndex = data.currentCheckpointIndex ?? 0
+    updates.day2SavedPhase = data.currentPhase ?? null
+    updates.day2Points = data.points ?? 0
+    updates.currentCheckpointIndex = data.day1SavedIndex ?? 0
+    updates.currentPhase = data.day1SavedPhase ?? null
+    updates.points = data.day1Points ?? 0   // restore Day 1 score display
+  }
+
+  await updateDoc(ref, updates)
+}
+
+// Reset a single player's Day 2 progress — keeps Day 1 results intact.
+// resetToken changes so the active player's subscription can detect the reset
+// and reload even when the day field stays the same (Day 2 → Day 2).
+export const resetTeamDay2 = async (pseudo) => {
+  await updateDoc(doc(db, 'teams', pseudo), {
+    day:                    2,
+    currentCheckpointIndex: 0,
+    currentPhase:           null,
+    savedQuestionIndex:     0,
+    isFinished:             false,
+    preLaunchDay2Done:      false,
+    points:                 0,
+    day2SavedIndex:         0,
+    day2SavedPhase:         null,
+    day2StartedAt:          deleteField(),
+    finishedAt:             deleteField(),
+    resetToken:             serverTimestamp(),
+    updatedAt:              serverTimestamp(),
+  })
 }
 
 export const adjustPoints = async (pseudo, delta) => {
@@ -252,13 +341,20 @@ export const saveTeamPhase = async (pseudo, phase, questionIndex = 0) => {
   })
 }
 
-export const setPreLaunchDone = async (pseudo) => {
-  await updateDoc(doc(db, 'teams', pseudo), {
-    preLaunchDone: true,
+export const setPreLaunchDone = async (pseudo, day = 1) => {
+  const updates = {
     currentPhase: 'envelope1',
     savedQuestionIndex: 0,
     updatedAt: serverTimestamp(),
-  })
+  }
+  if (day === 2) {
+    // Day 2 uses its own flag so Day 1's preLaunchDone doesn't block it
+    updates.preLaunchDay2Done = true
+    updates.day2StartedAt = serverTimestamp()
+  } else {
+    updates.preLaunchDone = true
+  }
+  await updateDoc(doc(db, 'teams', pseudo), updates)
 }
 
 export const updateTeamProgress = async (pseudo, checkpointId, { missionAnswer } = {}) => {

@@ -9,17 +9,18 @@ const { t } = useI18n()
 const admin = useAdminStore()
 
 // ── State ──────────────────────────────────────────────────────────────────────
-const checkpoints        = ref([])
-const participants       = ref([])
-const checkpointsPerDay  = ref(10)
-const finalCheckpointId  = ref('')   // checkpoint pinned to last position on every route
-const activeDay          = ref(1)
-const isLoading          = ref(false)
-const isAssigning        = ref(false)
-const isActivating       = ref(false)
-const assigned           = ref(false)
-const error              = ref('')
-const successMsg         = ref('')
+const checkpoints            = ref([])
+const participants           = ref([])
+const checkpointsPerDay      = ref(10)
+const finalCheckpointDay1Id  = ref('')   // pinned last on every Day 1 route
+const finalCheckpointDay2Id  = ref('')   // pinned last on every Day 2 route
+const activeDay              = ref(1)
+const isLoading              = ref(false)
+const isAssigning            = ref(false)
+const isActivating           = ref(false)
+const assigned               = ref(false)
+const error                  = ref('')
+const successMsg             = ref('')
 
 const generatedRoutes = ref([])  // [{ participantId, name, day1Order, day2Order }]
 
@@ -38,7 +39,12 @@ onMounted(async () => {
     ])
     checkpoints.value  = cps
     participants.value = parts
-    if (settings.finalCheckpointId) finalCheckpointId.value = settings.finalCheckpointId
+    if (settings.finalCheckpointDay1Id) finalCheckpointDay1Id.value = settings.finalCheckpointDay1Id
+    if (settings.finalCheckpointDay2Id) finalCheckpointDay2Id.value = settings.finalCheckpointDay2Id
+    // backward compat: promote old single finalCheckpointId to day1 if new fields absent
+    if (!settings.finalCheckpointDay1Id && settings.finalCheckpointId) {
+      finalCheckpointDay1Id.value = settings.finalCheckpointId
+    }
     if (participants.value.some(p => p.day1Order?.length)) {
       buildRoutesFromParticipants()
       assigned.value = true
@@ -49,10 +55,31 @@ onMounted(async () => {
 })
 
 const saveFinalCheckpoint = async () => {
-  await updateSettings({ finalCheckpointId: finalCheckpointId.value })
+  await updateSettings({
+    finalCheckpointDay1Id: finalCheckpointDay1Id.value,
+    finalCheckpointDay2Id: finalCheckpointDay2Id.value,
+  })
 }
 
 // ── Derived ────────────────────────────────────────────────────────────────────
+
+// For each day's dropdown: exclude the other day's final to prevent reuse
+const cpOptionsDay1 = computed(() =>
+  finalCheckpointDay2Id.value
+    ? checkpoints.value.filter(cp => cp.id !== finalCheckpointDay2Id.value)
+    : checkpoints.value
+)
+const cpOptionsDay2 = computed(() =>
+  finalCheckpointDay1Id.value
+    ? checkpoints.value.filter(cp => cp.id !== finalCheckpointDay1Id.value)
+    : checkpoints.value
+)
+
+// Which final is active for the currently displayed day (for table header highlight)
+const activeDayFinalId = computed(() =>
+  activeDay.value === 1 ? finalCheckpointDay1Id.value : finalCheckpointDay2Id.value
+)
+
 const checkpointMap = computed(() => {
   const m = {}
   checkpoints.value.forEach(cp => { m[cp.id] = cp })
@@ -93,12 +120,15 @@ function buildRoutesFromParticipants() {
 async function generateAndAssign() {
   error.value = ''
   successMsg.value = ''
-  const cpIds  = checkpoints.value.map(cp => cp.id)
-  const ppd    = checkpointsPerDay.value
-  const finalId = finalCheckpointId.value || null
-  const poolSize    = finalId ? cpIds.length - 1 : cpIds.length
-  const randomPerDay = finalId ? ppd - 1 : ppd
-  if (ppd < 1 || randomPerDay * 2 > poolSize) {
+  const cpIds    = checkpoints.value.map(cp => cp.id)
+  const ppd      = checkpointsPerDay.value
+  const final1   = finalCheckpointDay1Id.value || null
+  const final2   = finalCheckpointDay2Id.value || null
+  const finalsSet = new Set([final1, final2].filter(Boolean))
+  const poolSize  = cpIds.length - finalsSet.size
+  const randomDay1 = ppd - (final1 ? 1 : 0)
+  const randomDay2 = ppd - (final2 ? 1 : 0)
+  if (ppd < 1 || randomDay1 < 0 || randomDay2 < 0 || randomDay1 + randomDay2 > poolSize) {
     error.value = t('admin.routes.errorTooFew', { ppd, ppd_x2: ppd * 2, total: cpIds.length })
     return
   }
@@ -110,7 +140,7 @@ async function generateAndAssign() {
   isAssigning.value = true
   try {
     await saveFinalCheckpoint()
-    const routes = generateRoutes(cpIds, sortedParticipants.value.length, ppd, finalId)
+    const routes = generateRoutes(cpIds, sortedParticipants.value.length, ppd, final1, final2)
     const assignments = sortedParticipants.value.map((p, i) => ({
       participantId: p.id,
       trackId:   '',
@@ -262,21 +292,33 @@ async function handleActivateDay1() {
             </button>
           </div>
 
-          <!-- Final checkpoint selector -->
-          <div class="border-t border-slate-700 pt-4">
-            <label class="block text-xs text-slate-400 mb-1.5">
-              🏁 {{ t('admin.routes.finalCheckpoint') }}
-            </label>
-            <select
-              v-model="finalCheckpointId"
-              class="input-field text-sm"
-            >
-              <option value="">— {{ t('admin.routes.finalCheckpointNone') }} —</option>
-              <option v-for="cp in checkpoints" :key="cp.id" :value="cp.id">
-                {{ cp.title }}
-              </option>
-            </select>
-            <p class="text-xs text-slate-500 mt-1">{{ t('admin.routes.finalCheckpointHint') }}</p>
+          <!-- Final checkpoints (one per day) -->
+          <div class="border-t border-slate-700 pt-4 grid sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1.5">
+                🏁 Checkpoint final — Jour 1
+              </label>
+              <select v-model="finalCheckpointDay1Id" class="input-field text-sm">
+                <option value="">— Aucun —</option>
+                <option v-for="cp in cpOptionsDay1" :key="cp.id" :value="cp.id">
+                  {{ cp.title }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1.5">
+                🏁 Checkpoint final — Jour 2
+              </label>
+              <select v-model="finalCheckpointDay2Id" class="input-field text-sm">
+                <option value="">— Aucun —</option>
+                <option v-for="cp in cpOptionsDay2" :key="cp.id" :value="cp.id">
+                  {{ cp.title }}
+                </option>
+              </select>
+            </div>
+            <p class="sm:col-span-2 text-xs text-slate-500">
+              Ce checkpoint sera placé en dernier sur chaque parcours du jour correspondant et exclu du pool aléatoire de l'autre jour.
+            </p>
           </div>
         </div>
       </div>
@@ -310,10 +352,10 @@ async function handleActivateDay1() {
                   v-for="n in checkpointsPerDay" :key="n"
                   :class="[
                     'px-3 py-2 text-center font-semibold whitespace-nowrap min-w-[110px]',
-                    finalCheckpointId && n === checkpointsPerDay ? 'text-amber-300 bg-amber-500/10' : 'text-amber-400'
+                    activeDayFinalId && n === checkpointsPerDay ? 'text-amber-300 bg-amber-500/10' : 'text-amber-400'
                   ]"
                 >
-                  {{ finalCheckpointId && n === checkpointsPerDay ? '🏁' : `CP${n}` }}
+                  {{ activeDayFinalId && n === checkpointsPerDay ? '🏁' : `CP${n}` }}
                 </th>
               </tr>
             </thead>

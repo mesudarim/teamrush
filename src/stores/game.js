@@ -92,26 +92,43 @@ export const useGameStore = defineStore('game', () => {
       if (authStore.pseudo) {
         teamUnsubscribe?.()
         teamUnsubscribe = subscribeToTeam(authStore.pseudo, (data) => {
-          const prevDay = authStore.team?.day
+          const prevDay = authStore.team?.day ?? 1
+          const prevResetMs = authStore.team?.resetToken?.toMillis?.() ?? 0
           authStore.team = data
-          // When admin activates Day 2 while the player is on the waiting screen,
-          // automatically reload so Day 2 checkpoints are fetched.
-          if (prevDay === 1 && data.day === 2 && phase.value === 'day1complete') {
+          const newResetMs = data.resetToken?.toMillis?.() ?? 0
+          if (prevDay !== (data.day ?? 1)) {
+            // Day changed (URL-based day switching) — reload everything.
+            loadTrack()
+          } else if (newResetMs > 0 && newResetMs !== prevResetMs) {
+            // Admin reset this player — reload so the game reflects the fresh state.
             loadTrack()
           }
         })
       }
 
       const teamData = authStore.team
-      if (teamData?.isFinished || teamData?.day1Finished) {
-        // Team already done — compute final elapsed once, don't start the interval
-        const startedAt = teamData.startedAt?.toDate?.() ?? new Date()
-        const endedAt   = teamData.finishedAt?.toDate?.() ?? teamData.day1FinishedAt?.toDate?.() ?? new Date()
+      const currentDayDone = (currentDay === 1 && teamData?.day1Finished) || (currentDay === 2 && teamData?.isFinished)
+      if (currentDayDone) {
+        // Current day is done — freeze the elapsed counter at the final time
+        const startedAt = (currentDay === 2 ? teamData?.day2StartedAt?.toDate?.() : null)
+          ?? teamData?.startedAt?.toDate?.() ?? new Date()
+        const endedAt = (currentDay === 2 ? teamData?.finishedAt?.toDate?.() : null)
+          ?? teamData?.day1FinishedAt?.toDate?.() ?? new Date()
         elapsedSeconds.value = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000)
       } else {
         startElapsedTimer()
       }
     } catch (e) {
+      // Restore from localStorage snapshot only for mid-game phases.
+      // Never restore end-screen phases (day1complete, finished) — those are
+      // determined by Firestore flags, not the snapshot, to avoid cross-day confusion.
+      try {
+        const snap = _snapKey() && localStorage.getItem(_snapKey())
+        if (snap) {
+          const { phase: savedPhase } = JSON.parse(snap)
+          if (savedPhase && RESTORABLE_PHASES.has(savedPhase)) phase.value = savedPhase
+        }
+      } catch {}
       error.value = e.message
     } finally {
       isLoading.value = false
@@ -123,17 +140,40 @@ export const useGameStore = defineStore('game', () => {
   // the user restarts from envelope1 to avoid skipping verification.
   const RESTORABLE_PHASES = new Set(['stage1', 'bravo', 'stage2', 'tapis'])
 
+  const _snapKey = () => authStore.pseudo ? `teamrush_snap_${authStore.pseudo}` : null
+
   const persistPhase = (p, qIdx = 0) => {
-    if (authStore.pseudo) saveTeamPhase(authStore.pseudo, p, qIdx).catch(() => {})
+    if (!authStore.pseudo) return
+    saveTeamPhase(authStore.pseudo, p, qIdx).catch(() => {})
+    try { localStorage.setItem(_snapKey(), JSON.stringify({ phase: p, idx: qIdx })) } catch {}
   }
 
   const loadCurrentCheckpoint = async () => {
+    const currentDay = authStore.team?.day ?? 1
+
+    // Check day-specific completion flags first — these are authoritative regardless
+    // of checkpoint index (index can be stale after a day switch).
+    if (currentDay === 1 && authStore.team?.day1Finished) {
+      currentCheckpoint.value = null
+      phase.value = 'day1complete'
+      return
+    }
+    if (currentDay === 2 && authStore.team?.isFinished) {
+      currentCheckpoint.value = null
+      phase.value = 'finished'
+      return
+    }
+
     const idx = authStore.team?.currentCheckpointIndex ?? 0
     if (idx >= checkpoints.value.length) {
-      // Could be the tapis phase (post-last checkpoint, awaiting final verification)
       const saved = authStore.team?.currentPhase
       currentCheckpoint.value = null
-      phase.value = saved === 'tapis' ? 'tapis' : 'finished'
+      if (saved === 'tapis') {
+        phase.value = 'tapis'
+      } else {
+        // Fallback: shouldn't normally reach here
+        phase.value = currentDay === 1 ? 'day1complete' : 'finished'
+      }
       return
     }
     currentCheckpoint.value = checkpoints.value[idx]
@@ -314,8 +354,9 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
-  // Multi-field stage1: inputs can be in any order, no duplicates allowed.
-  // Uses greedy bipartite matching — sufficient for non-overlapping keyword sets.
+  // Multi-field stage1: inputs can be in any order.
+  // Uses greedy bipartite matching — each pool can only be claimed once,
+  // so the same input can match two pools only if both pools contain that value.
   const _matchMultiField = (cleanedInputs, pools) => {
     const used = new Array(pools.length).fill(false)
     for (const inp of cleanedInputs) {
@@ -336,8 +377,6 @@ export const useGameStore = defineStore('game', () => {
     const cp = currentCheckpoint.value
     const clean = s => s.trim().toLowerCase()
     const cleaned = inputs.map(clean)
-
-    if (new Set(cleaned).size !== cleaned.length) return false
 
     const keywords = cp?.stage1Keywords ?? []
     const pools = keywords.map(kw => [
@@ -387,7 +426,7 @@ export const useGameStore = defineStore('game', () => {
 
   const completePreLaunch = async () => {
     if (!authStore.pseudo) return
-    await setPreLaunchDone(authStore.pseudo)
+    await setPreLaunchDone(authStore.pseudo, authStore.team?.day ?? 1)
     await authStore.refreshTeam()
   }
 
@@ -410,7 +449,9 @@ export const useGameStore = defineStore('game', () => {
 
   const startElapsedTimer = () => {
     clearInterval(timerInterval)
-    const startedAt = authStore.team?.startedAt?.toDate?.() ?? new Date()
+    const currentDay = authStore.team?.day ?? 1
+    const startedAt = (currentDay === 2 ? authStore.team?.day2StartedAt?.toDate?.() : null)
+      ?? authStore.team?.startedAt?.toDate?.() ?? new Date()
     // Set immediately so elapsedSeconds is correct even before the first tick
     elapsedSeconds.value = Math.floor((Date.now() - startedAt.getTime()) / 1000)
     timerInterval = setInterval(() => {

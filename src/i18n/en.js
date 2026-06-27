@@ -20,7 +20,10 @@ export default {
     noTracks: 'No tracks available. Contact event staff.',
     errors: {
       emptyIdentifier: 'Please enter your phone number',
+      digitsOnly: 'This field only accepts digits (0–9), no letters or special characters.',
       emptyTrack: 'Please select a track',
+      day1AlreadyFinished: 'You already finished Day 1! Thank you for playing 🎉',
+      day2AlreadyFinished: 'You already finished Day 2! Thank you for playing 🏆',
     },
   },
   preLaunch: {
@@ -421,7 +424,7 @@ export default {
       colStatus: 'Status',
       inGame: 'In game',
       waiting: 'Waiting',
-      deleteConfirm: 'Remove this participant? Their game data will not be deleted.',
+      deleteConfirm: 'Permanently delete this participant? All their game data will be deleted.',
       deleteAllConfirm: 'Delete ALL {n} participants? This cannot be undone.',
       importSuccess: '✅ {n} participant(s) imported',
     },

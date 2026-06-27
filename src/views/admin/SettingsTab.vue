@@ -3,6 +3,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminStore } from '@/stores/admin'
 import { cleanOrphanTeams, getAdminEmails, saveAdminEmails } from '@/firebase/firestore'
+import QrCodeDisplay from '@/components/ui/QrCodeDisplay.vue'
 
 const { t } = useI18n()
 const admin = useAdminStore()
@@ -10,6 +11,27 @@ const admin = useAdminStore()
 const form = ref({ eventName: '', introVideoUrl: '', introVideoUrlDay2: '', timeBonusMax: 100, timeBonusPar: 90, isEventLive: false, tapiskeyword: '', tapiskeywordEn: '', tapisInstruction: '', tapisInstructionEn: '', tapisVideoUrl: '', tapiskeywordDay2: '', tapiskeywordEnDay2: '', tapisInstructionDay2: '', tapisInstructionEnDay2: '', tapisVideoUrlDay2: '', tapisManualEntry: false, preLaunchDay1Intro: '', preLaunchDay1IntroEn: '', preLaunchDay1Outro: '', preLaunchDay1OutroEn: '', preLaunchDay1Missions: [], preLaunchDay2Intro: '', preLaunchDay2IntroEn: '', preLaunchDay2Outro: '', preLaunchDay2OutroEn: '', preLaunchDay2Missions: [] })
 
 const preLaunchDay = ref('1')
+
+const showTapisQr = ref({ day1: false, day2: false })
+const tapisQrValue = (day) => {
+  const kw = day === 1 ? form.value.tapiskeyword : form.value.tapiskeywordDay2
+  return (kw || '').split(',')[0].trim()
+}
+
+const copiedUrl = ref('')
+const playerUrls = [
+  { label: 'Jour 1', url: 'https://teamrush.web.app/' },
+  { label: 'Jour 2', url: 'https://teamrush.web.app/day2' },
+  { label: 'Résultats J1', url: 'https://teamrush.web.app/resultats' },
+  { label: 'Résultats J2', url: 'https://teamrush.web.app/resultats/jour2' },
+  { label: 'Résultats Total', url: 'https://teamrush.web.app/resultats/total' },
+]
+const copyUrl = (url) => {
+  navigator.clipboard.writeText(url).then(() => {
+    copiedUrl.value = url
+    setTimeout(() => { copiedUrl.value = '' }, 2000)
+  })
+}
 
 function emptyPreLaunchMission() {
   return {
@@ -121,13 +143,13 @@ const doResetAll = async () => {
 </script>
 
 <template>
-  <div class="max-w-lg">
+  <div class="max-w-4xl">
     <h2 class="section-title mb-6">{{ t('admin.settings.title') }}</h2>
 
     <div class="card-glow space-y-5">
       <div>
         <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.settings.eventName') }}</label>
-        <input v-model="form.eventName" class="input-field" placeholder="המרוץ לצפון 2026" />
+        <input v-model="form.eventName" class="input-field" placeholder="המירוץ לצפון 2026" />
       </div>
 
       <div>
@@ -200,7 +222,7 @@ const doResetAll = async () => {
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-slate-400 mb-1">{{ t('admin.settings.tapisInstruction') }} (עברית)</label>
-              <input v-model="form.tapisInstruction" class="input-field" placeholder="מצאו את השטיח..." />
+              <textarea v-model="form.tapisInstruction" rows="3" class="input-field resize-none text-sm" placeholder="מצאו את השטיח..." />
             </div>
             <div>
               <label class="block text-xs text-slate-400 mb-1">{{ t('admin.settings.tapisInstruction') }} (English)</label>
@@ -213,6 +235,25 @@ const doResetAll = async () => {
             <p class="text-xs text-slate-500 mt-1">{{ t('admin.settings.tapisVideoUrlHint') }}</p>
           </div>
           <p v-if="!form.tapiskeyword?.trim()" class="text-xs text-amber-400/70">{{ t('admin.settings.tapisEmpty') }}</p>
+
+          <!-- QR code Day 1 -->
+          <div class="pt-2">
+            <button
+              @click="showTapisQr.day1 = !showTapisQr.day1"
+              :disabled="!tapisQrValue(1)"
+              class="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl border transition-colors disabled:opacity-40"
+              :class="showTapisQr.day1 ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'border-slate-600 bg-slate-800 text-slate-300 hover:text-amber-400'"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+              </svg>
+              {{ showTapisQr.day1 ? 'Masquer le QR' : 'Générer le QR code' }}
+            </button>
+            <div v-if="showTapisQr.day1" class="mt-3 flex justify-center">
+              <QrCodeDisplay :value="tapisQrValue(1)" label="Tapis-Jour1" brand="נופש רשות 2026" />
+            </div>
+          </div>
         </div>
 
         <!-- Day 2 -->
@@ -232,7 +273,7 @@ const doResetAll = async () => {
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-slate-400 mb-1">{{ t('admin.settings.tapisInstruction') }} (עברית)</label>
-              <input v-model="form.tapisInstructionDay2" class="input-field" placeholder="מצאו את השטיח..." />
+              <textarea v-model="form.tapisInstructionDay2" rows="3" class="input-field resize-none text-sm" placeholder="מצאו את השטיח..." />
             </div>
             <div>
               <label class="block text-xs text-slate-400 mb-1">{{ t('admin.settings.tapisInstruction') }} (English)</label>
@@ -245,20 +286,42 @@ const doResetAll = async () => {
             <p class="text-xs text-slate-500 mt-1">{{ t('admin.settings.tapisVideoUrlHint') }}</p>
           </div>
           <p v-if="!form.tapiskeywordDay2?.trim()" class="text-xs text-amber-400/70">{{ t('admin.settings.tapisEmpty') }}</p>
+
+          <!-- QR code Day 2 -->
+          <div class="pt-2">
+            <button
+              @click="showTapisQr.day2 = !showTapisQr.day2"
+              :disabled="!tapisQrValue(2)"
+              class="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl border transition-colors disabled:opacity-40"
+              :class="showTapisQr.day2 ? 'border-blue-500/50 bg-blue-500/10 text-blue-400' : 'border-slate-600 bg-slate-800 text-slate-300 hover:text-blue-400'"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+              </svg>
+              {{ showTapisQr.day2 ? 'Masquer le QR' : 'Générer le QR code' }}
+            </button>
+            <div v-if="showTapisQr.day2" class="mt-3 flex justify-center">
+              <QrCodeDisplay :value="tapisQrValue(2)" label="Tapis-Jour2" brand="נופש רשות 2026" />
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="flex items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-700">
-        <div>
-          <div class="font-semibold text-slate-200">{{ t('admin.settings.isLive') }}</div>
-          <div class="text-xs text-slate-400 mt-0.5">Enables team registration</div>
+      <!-- ── Player URLs ── -->
+      <div class="p-4 bg-slate-900/50 rounded-xl border border-slate-700 space-y-3">
+        <div class="font-semibold text-slate-200 text-sm">🔗 Liens joueurs</div>
+        <div class="space-y-2">
+          <div v-for="({ label, url }) in playerUrls" :key="url"
+               class="flex items-center gap-2">
+            <span class="text-xs text-slate-400 w-14 shrink-0">{{ label }}</span>
+            <code class="flex-1 text-xs text-amber-300 bg-slate-800 rounded-lg px-3 py-2 truncate">{{ url }}</code>
+            <button @click="copyUrl(url)"
+                    class="shrink-0 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-semibold transition-colors">
+              {{ copiedUrl === url ? '✓' : 'Copier' }}
+            </button>
+          </div>
         </div>
-        <button
-          @click="form.isEventLive = !form.isEventLive"
-          :class="['relative w-14 h-7 rounded-full transition-colors', form.isEventLive ? 'bg-amber-500' : 'bg-slate-600']"
-        >
-          <span :class="['absolute top-1.5 w-4 h-4 rounded-full bg-white transition-all', form.isEventLive ? 'start-8' : 'start-1.5']" />
-        </button>
       </div>
 
       <!-- ── Pre-launch questions ── -->

@@ -94,7 +94,7 @@ const download = async () => {
   ctx.shadowColor  = 'rgba(100,50,0,0.7)'
   ctx.shadowOffsetY = 3
   ctx.shadowBlur    = 10
-  ctx.fillText('המרוץ לצפון', W / 2, BAND + 34)
+  ctx.fillText('המירוץ לצפון', W / 2, BAND + 34)
   ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0; ctx.shadowBlur = 0
 
   // ── QR code (white rounded card) ──
@@ -175,7 +175,7 @@ const download = async () => {
 
         <!-- Top label -->
         <div class="text-center">
-          <span class="qr-label">המרוץ לצפון</span>
+          <span class="qr-label">המירוץ לצפון</span>
         </div>
 
         <!-- QR code on white background -->

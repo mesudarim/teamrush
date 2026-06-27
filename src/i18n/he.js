@@ -1,6 +1,6 @@
 export default {
   app: {
-    name: 'המרוץ לצפון',
+    name: 'המירוץ לצפון',
     tagline: 'נופש רשות 2026',
   },
   nav: {
@@ -8,7 +8,7 @@ export default {
     logout: 'יציאה',
   },
   login: {
-    title: 'ברוכים הבאים למרוץ לצפון',
+    title: 'ברוכים הבאים למירוץ לצפון',
     subtitle: 'הזינו את פרטיכם כדי להצטרף למשחק',
     identifierLabel: 'מספר טלפון',
     identifierPlaceholder: 'לדוגמה: 0501234567',
@@ -20,7 +20,10 @@ export default {
     noTracks: 'אין מסלולים זמינים כרגע. פנו לצוות האירוע.',
     errors: {
       emptyIdentifier: 'יש להזין מספר טלפון',
+      digitsOnly: 'שדה זה מקבל ספרות בלבד (0–9), ללא אותיות או תווים מיוחדים.',
       emptyTrack: 'יש לבחור מסלול',
+      day1AlreadyFinished: 'כבר סיימתם את יום 1! תודה על השתתפותכם 🎉',
+      day2AlreadyFinished: 'כבר סיימתם את יום 2! תודה על השתתפותכם 🏆',
     },
   },
   intro: {
@@ -330,7 +333,7 @@ export default {
       timeBonusParHint: 'הזמן שאחריו הבונוס = 0',
       timeBonusExample: 'דוגמה: סיום ב-{halfPar} דק׳ ← ‎+{quarter} נק׳ · סיום ב-{par} דק׳ ← ‎+0 נק׳',
       preLaunchTitle: 'שאלות לפני הלאנץ׳',
-      preLaunchDesc: 'שאלות ומשחקים שמוצגים לכל הצוותים לפני תחילת המרוץ, כדי שלא כולם יצאו בו זמנית.',
+      preLaunchDesc: 'שאלות ומשחקים שמוצגים לכל הצוותים לפני תחילת המירוץ, כדי שלא כולם יצאו בו זמנית.',
       preLaunchIntro: 'טקסט פתיחה',
       preLaunchIntroHint: 'הסבר כללי לצוותים לפני השאלות...',
       preLaunchOutro: 'טקסט סיום',
@@ -421,7 +424,7 @@ export default {
       colStatus: 'סטטוס',
       inGame: 'במשחק',
       waiting: 'ממתין',
-      deleteConfirm: 'להסיר משתתף זה? נתוני המשחק שלהם לא יימחקו.',
+      deleteConfirm: 'למחוק משתתף זה לצמיתות? כל נתוני המשחק שלהם יימחקו.',
       deleteAllConfirm: 'למחוק את כל {n} המשתתפים? פעולה זו אינה הפיכה.',
       importSuccess: '✅ {n} משתתפים יובאו',
     },

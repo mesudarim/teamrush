@@ -171,6 +171,11 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- Leaderboard button -->
+        <button @click="$router.push({ name: 'Leaderboard' })" class="btn-primary w-full py-4 text-base font-bold">
+          טבלת דירוג 📊
+        </button>
+
         <!-- Intro text -->
         <div class="card-glow text-center space-y-2 py-4">
           <p class="text-white font-bold text-lg leading-relaxed" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
@@ -241,14 +246,6 @@ onUnmounted(() => {
           <p class="text-white font-black text-xl" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
             צאו ליהנות, מגיע לכם! 🙌
           </p>
-        </div>
-
-        <!-- Waiting pill -->
-        <div class="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm text-center">
-          <span class="animate-pulse">⏳</span>
-          <span style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-            יום 2 ייפתח בהמשך — המנהל יפעיל אותו כשיגיע הזמן
-          </span>
         </div>
 
         <!-- Home button -->

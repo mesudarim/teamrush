@@ -184,14 +184,6 @@ const submit = () => {
   <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
     <div class="space-y-5">
 
-      <!-- Question text -->
-      <div v-if="questionText" class="bg-slate-900/60 rounded-xl px-5 py-4 border border-slate-700 text-center">
-        <p class="text-white font-bold text-2xl leading-snug whitespace-pre-line"
-           style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-          {{ questionText }}
-        </p>
-      </div>
-
       <!-- Compass -->
       <div class="flex flex-col items-center gap-3">
 
@@ -265,6 +257,14 @@ const submit = () => {
             </div>
           </div>
         </template>
+      </div>
+
+      <!-- Question text -->
+      <div v-if="questionText" class="bg-slate-900/60 rounded-xl px-5 py-4 border border-slate-700 text-center">
+        <p class="text-white font-bold text-base leading-snug whitespace-pre-line"
+           style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
+          {{ questionText }}
+        </p>
       </div>
 
       <!-- Success state -->

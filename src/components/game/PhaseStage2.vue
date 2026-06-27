@@ -27,18 +27,29 @@ const MissionComponent = computed(() => {
 })
 const isMulti = computed(() => game.questions.length > 1)
 
+const submitting = ref(false)
+const submitError = ref(false)
+
 const onCorrect = async (bonusPoints = 0) => {
-  await game.answerQuestion(true, bonusPoints)
-  const isLast = game.currentQuestionIndex >= game.questions.length - 1
-  if (isLast) {
-    await game.finishAllQuestions()
-  } else {
-    game.advanceQuestion()
+  submitting.value = true
+  submitError.value = false
+  try {
+    await game.answerQuestion(true, bonusPoints)
+    const isLast = game.currentQuestionIndex >= game.questions.length - 1
+    if (isLast) {
+      await game.finishAllQuestions()
+    } else {
+      game.advanceQuestion()
+    }
+  } catch {
+    submitError.value = true
+  } finally {
+    submitting.value = false
   }
 }
 
 const onWrong = async () => {
-  await game.answerQuestion(false)
+  await game.answerQuestion(false).catch(() => {})
 }
 
 // ── Skip ──────────────────────────────────────────────────────────────────────
@@ -96,6 +107,17 @@ const confirmSkip = async () => {
             </div>
           </template>
         </Suspense>
+      </div>
+    </Transition>
+
+    <!-- Network error retry -->
+    <Transition name="phase">
+      <div v-if="submitError"
+           class="mt-3 flex items-center justify-between gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
+        <span>{{ $i18n.locale === 'en' ? 'Connection error — tap to retry' : 'שגיאת חיבור — לחצו לנסות שוב' }}</span>
+        <button @click="onCorrect()" class="font-bold underline shrink-0">
+          {{ $i18n.locale === 'en' ? 'Retry' : 'נסה שוב' }}
+        </button>
       </div>
     </Transition>
 

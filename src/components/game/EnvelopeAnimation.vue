@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 
 const props = defineProps({
-  brandText:  { type: String,  default: 'המרוץ לצפון' },
+  brandText:  { type: String,  default: 'המירוץ לצפון' },
   label:      { type: String,  default: 'יעד' },
   tapText:    { type: String,  default: 'לחצו לפתיחה' },
   alwaysFlip: { type: Boolean, default: false },

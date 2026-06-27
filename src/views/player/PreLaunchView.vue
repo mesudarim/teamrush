@@ -110,13 +110,14 @@ const startMissions = () => {
   scrollTop()
 }
 
-const onCorrect = async (bonusPoints = 0) => {
-  await game.answerPreLaunchMission(true, bonusPoints, currentMission.value)
-  advanceMission()
+const onCorrect = (bonusPoints = 0) => {
+  game.answerPreLaunchMission(true, bonusPoints, currentMission.value).catch(() => {})
+  // Short delay so the player sees the green answer before the component remounts
+  setTimeout(advanceMission, 700)
 }
 
-const onWrong = async () => {
-  await game.answerPreLaunchMission(false, 0, currentMission.value)
+const onWrong = () => {
+  game.answerPreLaunchMission(false, 0, currentMission.value).catch(() => {})
   // Mission component handles retry internally — don't advance
 }
 
@@ -194,11 +195,6 @@ const launchGame = async () => {
               {{ introText }}
             </div>
 
-            <div class="card bg-amber-500/10 border-amber-500/30 text-center space-y-1">
-              <p class="text-amber-300 font-bold text-sm">{{ t('preLaunch.missionCount', { n: missions.length }) }}</p>
-              <p class="text-slate-400 text-xs">{{ t('preLaunch.pointsInfo') }}</p>
-            </div>
-
             <button @click="startMissions" class="btn-primary w-full py-4 text-lg font-bold">
               {{ t('preLaunch.startBtn') }}
             </button>
@@ -229,6 +225,14 @@ const launchGame = async () => {
               @correct="onCorrect"
               @wrong="onWrong"
             />
+          </div>
+
+          <!-- Skip question -->
+          <div class="text-center py-3">
+            <button @click="advanceMission"
+                    class="text-xs text-slate-500 hover:text-slate-300 underline underline-offset-2 transition-colors">
+              {{ locale === 'en' ? 'Skip this question' : 'דלג על שאלה זו' }}
+            </button>
           </div>
         </div>
       </Transition>

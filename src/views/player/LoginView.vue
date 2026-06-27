@@ -1,19 +1,38 @@
 ﻿<script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { getSettings } from '@/firebase/firestore'
 import LanguageToggle from '@/components/ui/LanguageToggle.vue'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
-const auth = useAuthStore()
+const route  = useRoute()
+const auth   = useAuthStore()
+
+const isDay2   = computed(() => route.name === 'LoginDay2')
+const dayLabel = computed(() => isDay2.value
+  ? (locale.value === 'en' ? 'Day 2' : 'יום 2')
+  : (locale.value === 'en' ? 'Day 1' : 'יום 1')
+)
 
 const identifier = ref('')
 const formError  = ref('')
 const settings   = ref({})
+
+const onPhoneInput = (e) => {
+  const raw    = e.target.value
+  const digits = raw.replace(/\D/g, '')
+  identifier.value = digits
+  // Show warning only when a non-digit was actually typed
+  if (digits.length < raw.length) {
+    formError.value = t('login.errors.digitsOnly')
+  } else if (formError.value === t('login.errors.digitsOnly')) {
+    formError.value = ''
+  }
+}
 
 onMounted(async () => {
   settings.value = await getSettings()
@@ -23,11 +42,15 @@ const submit = async () => {
   formError.value = ''
   if (!identifier.value.trim()) { formError.value = t('login.errors.emptyIdentifier'); return }
 
-  const ok = await auth.login(identifier.value.trim(), '')
+  const ok = await auth.login(identifier.value.trim(), '', isDay2.value ? 2 : 1)
   if (ok) {
     router.push({ name: 'Intro', state: { settings: JSON.stringify(settings.value) } })
   } else if (auth.error === 'NOT_ON_LIST') {
     formError.value = t('login.notOnList')
+  } else if (auth.error === 'DAY1_ALREADY_FINISHED') {
+    formError.value = t('login.errors.day1AlreadyFinished')
+  } else if (auth.error === 'DAY2_ALREADY_FINISHED') {
+    formError.value = t('login.errors.day2AlreadyFinished')
   } else {
     formError.value = auth.error
   }
@@ -55,11 +78,17 @@ const submit = async () => {
              alt="Israel Securities Authority"
              class="mx-auto mb-5"
              style="max-width: 220px; height: auto;" />
-        <h1 class="text-3xl font-bold text-white mb-1"
+        <h1 class="text-3xl font-bold text-white"
             style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
           {{ t('login.title') }}
         </h1>
-        <p class="text-slate-400 text-sm">{{ settings.eventName || t('app.tagline') }}</p>
+        <p class="text-slate-400 text-sm mt-2">{{ settings.eventName || t('app.tagline') }}</p>
+        <div class="flex items-center justify-center mt-4">
+          <span class="px-4 py-1 rounded-full text-sm font-bold"
+                :class="isDay2 ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'">
+            {{ dayLabel }}
+          </span>
+        </div>
       </div>
 
       <!-- Login card -->
@@ -70,13 +99,15 @@ const submit = async () => {
           <div>
             <label class="block text-sm font-semibold text-slate-300 mb-2">{{ t('login.identifierLabel') }}</label>
             <input
-              v-model="identifier"
+              :value="identifier"
+              @input="onPhoneInput"
+              @keyup.enter="submit"
               type="tel"
               inputmode="numeric"
+              pattern="[0-9]*"
               class="input-field text-lg font-semibold"
               :placeholder="t('login.identifierPlaceholder')"
-              @keyup.enter="submit"
-              maxlength="20"
+              maxlength="15"
               autocomplete="tel"
             />
           </div>
