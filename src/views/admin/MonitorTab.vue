@@ -3,6 +3,9 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminStore } from '@/stores/admin'
 import { subscribeToPhotos, subscribeToAudioRecordings, resetTeamDay2, activateDay2 } from '@/firebase/firestore'
+import { ref as storageRef, getBlob } from 'firebase/storage'
+import { storage } from '@/firebase/config'
+import JSZip from 'jszip'
 
 const { t } = useI18n()
 const admin = useAdminStore()
@@ -12,6 +15,65 @@ const lightbox = ref(null)
 const recordings = ref([])
 let photosUnsubscribe = null
 let recordingsUnsubscribe = null
+
+const downloadingPhotos = ref(false)
+const downloadProgress  = ref(0)
+
+// Extract the Firebase Storage path from a download URL.
+// Format: https://firebasestorage.googleapis.com/v0/b/BUCKET/o/ENCODED_PATH?alt=media&token=...
+const _storagePath = (url) => {
+  try {
+    const match = url.match(/\/o\/([^?]+)/)
+    return match ? decodeURIComponent(match[1]) : null
+  } catch { return null }
+}
+
+const downloadAllPhotos = async () => {
+  if (!photos.value.length || downloadingPhotos.value) return
+  downloadingPhotos.value = true
+  downloadProgress.value  = 0
+  try {
+    const zip   = new JSZip()
+    const total = photos.value.length
+    let done    = 0
+
+    for (const photo of photos.value) {
+      const path = _storagePath(photo.url)
+      console.log(`[download] ${done + 1}/${total} path="${path}" url="${photo.url.slice(0, 80)}…"`)
+      try {
+        let blob
+        if (path) {
+          blob = await Promise.race([
+            getBlob(storageRef(storage, path)),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout 15s')), 15000)),
+          ])
+        } else {
+          blob = await fetch(photo.url).then(r => r.blob())
+        }
+        const ext  = blob.type.includes('png') ? 'png' : 'jpg'
+        const team = (photo.teamName || photo.teamPseudo || 'equipe').replace(/[/\\?%*:|"<>]/g, '-')
+        const cp   = (photo.checkpointTitle || '').replace(/[/\\?%*:|"<>]/g, '-')
+        zip.file(`${String(done + 1).padStart(3, '0')}_${team}_${cp}.${ext}`, blob)
+        console.log(`[download] ✅ ok`)
+      } catch (err) {
+        console.error(`[download] ❌ failed:`, err.message)
+      } finally {
+        done++
+        downloadProgress.value = Math.round((done / total) * 100)
+      }
+    }
+
+    const content = await zip.generateAsync({ type: 'blob' })
+    const a = document.createElement('a')
+    a.href     = URL.createObjectURL(content)
+    a.download = `teamrush-photos-${new Date().toISOString().slice(0, 10)}.zip`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000)
+  } finally {
+    downloadingPhotos.value = false
+    downloadProgress.value  = 0
+  }
+}
 
 onMounted(() => {
   photosUnsubscribe    = subscribeToPhotos((list) => { photos.value = list })
@@ -547,9 +609,21 @@ const confirmReset = async (pseudo) => {
 
     <!-- ── Photos gallery ───────────────────────────────────────────────────── -->
     <div class="mt-10">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="section-title">📷 {{ t('admin.monitor.photos') }}</h2>
-        <span class="text-sm text-slate-400">{{ t('admin.monitor.photosCount', { n: photos.length }) }}</span>
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div>
+          <h2 class="section-title">📷 {{ t('admin.monitor.photos') }}</h2>
+          <span class="text-sm text-slate-400">{{ t('admin.monitor.photosCount', { n: photos.length }) }}</span>
+        </div>
+        <button
+          v-if="photos.length > 0"
+          @click="downloadAllPhotos"
+          :disabled="downloadingPhotos"
+          class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-slate-600 text-slate-300 hover:border-amber-500/60 hover:text-amber-400 transition-colors disabled:opacity-50"
+        >
+          <span v-if="downloadingPhotos" class="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+          <span v-else>⬇</span>
+          {{ downloadingPhotos ? `${downloadProgress}%` : `Tout télécharger (${photos.length})` }}
+        </button>
       </div>
 
       <div v-if="photos.length === 0" class="card text-center text-slate-500 py-10">
