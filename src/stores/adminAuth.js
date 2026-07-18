@@ -1,68 +1,95 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { doc, getDoc } from 'firebase/firestore'
+import { db } from '@/firebase/config'
 import { signInWithGoogle, signOutAdmin, onAdminAuthChange } from '@/firebase/auth'
 import { getAdminEmails } from '@/firebase/firestore'
+import { getSuperAdminEmails } from '@/firebase/superadmin'
 
 const SEED_ADMIN = 'ephraimichael@gmail.com'
 
-const isEmailAllowed = async (email) => {
+const isSuperAdminEmail = async (email) => {
   if (email.toLowerCase() === SEED_ADMIN) return true
   try {
-    const emails = await getAdminEmails()
-    if (emails.length > 0) {
-      return emails.map(e => e.toLowerCase()).includes(email.toLowerCase())
-    }
-  } catch {}
-  return false
+    const emails = await getSuperAdminEmails()
+    return emails.map(e => e.toLowerCase()).includes(email.toLowerCase())
+  } catch { return false }
+}
+
+const isGameAdminEmail = async (email, gameId) => {
+  if (!gameId) return false
+  try {
+    const emails = await getAdminEmails(gameId)
+    return emails.map(e => e.toLowerCase()).includes(email.toLowerCase())
+  } catch { return false }
 }
 
 export const useAdminAuthStore = defineStore('adminAuth', () => {
-  const user = ref(null)
-  const loading = ref(true)
-  const error = ref(null)
+  const user         = ref(null)
+  const loading      = ref(true)
+  const error        = ref(null)
+  const isSuperAdmin = ref(false)
 
   const isAuthenticated = computed(() => !!user.value)
-  const displayName = computed(() => user.value?.displayName ?? '')
-  const email = computed(() => user.value?.email ?? '')
-  const photoURL = computed(() => user.value?.photoURL ?? '')
+  const displayName     = computed(() => user.value?.displayName ?? '')
+  const email           = computed(() => user.value?.email ?? '')
+  const photoURL        = computed(() => user.value?.photoURL ?? '')
 
   let resolved = false
-  const init = () =>
+
+  /**
+   * Init with optional gameId to check game-specific access.
+   * If gameId is omitted (superadmin routes), only checks superadmin list.
+   */
+  const init = (gameId) =>
     new Promise((resolve) => {
       if (resolved) { resolve(user.value); return }
       onAdminAuthChange(async (u) => {
         if (u) {
-          const allowed = await isEmailAllowed(u.email)
-          if (allowed) {
+          const superAdmin = await isSuperAdminEmail(u.email)
+          const gameAdmin  = gameId ? await isGameAdminEmail(u.email, gameId) : false
+          if (superAdmin || gameAdmin) {
             user.value = u
+            isSuperAdmin.value = superAdmin
           } else {
             user.value = null
+            isSuperAdmin.value = false
             await signOutAdmin()
           }
         } else {
           user.value = null
+          isSuperAdmin.value = false
         }
         loading.value = false
         if (!resolved) { resolved = true; resolve(user.value) }
       })
     })
 
-  const login = async () => {
+  /**
+   * Check access for a specific gameId after init (e.g., when navigating between games).
+   */
+  const checkGameAccess = async (gameId) => {
+    if (!user.value) return false
+    if (isSuperAdmin.value) return true
+    return isGameAdminEmail(user.value.email, gameId)
+  }
+
+  const login = async (gameId) => {
     error.value = null
     try {
       const result = await signInWithGoogle()
-      const allowed = await isEmailAllowed(result.user.email)
-      if (!allowed) {
+      const superAdmin = await isSuperAdminEmail(result.user.email)
+      const gameAdmin  = gameId ? await isGameAdminEmail(result.user.email, gameId) : false
+      if (!superAdmin && !gameAdmin) {
         await signOutAdmin()
         error.value = "Ce compte Google n'est pas autorisé à accéder à l'administration."
         return false
       }
       user.value = result.user
+      isSuperAdmin.value = superAdmin
       return true
     } catch (e) {
-      if (e.code !== 'auth/popup-closed-by-user') {
-        error.value = e.message
-      }
+      if (e.code !== 'auth/popup-closed-by-user') error.value = e.message
       return false
     }
   }
@@ -70,7 +97,13 @@ export const useAdminAuthStore = defineStore('adminAuth', () => {
   const logout = async () => {
     await signOutAdmin()
     user.value = null
+    isSuperAdmin.value = false
+    resolved = false
   }
 
-  return { user, loading, error, isAuthenticated, displayName, email, photoURL, init, login, logout }
+  return {
+    user, loading, error, isSuperAdmin,
+    isAuthenticated, displayName, email, photoURL,
+    init, login, logout, checkGameAccess,
+  }
 })

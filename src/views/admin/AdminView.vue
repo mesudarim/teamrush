@@ -1,33 +1,38 @@
-﻿<script setup>
-import { onMounted, onUnmounted } from 'vue'
+<script setup>
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
 import { useAdminAuthStore } from '@/stores/adminAuth'
+import { useGameContextStore } from '@/stores/gameContext'
 import LanguageToggle from '@/components/ui/LanguageToggle.vue'
 
-const { t } = useI18n()
-const route = useRoute()
-const router = useRouter()
-const admin = useAdminStore()
-const adminAuth = useAdminAuthStore()
+const { t }       = useI18n()
+const route       = useRoute()
+const router      = useRouter()
+const admin       = useAdminStore()
+const adminAuth   = useAdminAuthStore()
+const gameContext = useGameContextStore()
+
+const gameId   = computed(() => route.params.gameId)
+const basePath = computed(() => `/g/${gameId.value}/admin`)
 
 const logout = async () => {
   await adminAuth.logout()
-  router.replace({ name: 'AdminLogin' })
+  router.replace({ name: 'AdminLogin', params: { gameId: gameId.value } })
 }
 
 onMounted(() => admin.init())
 onUnmounted(() => admin.cleanup())
 
-const tabs = [
-  { key: 'AdminParticipants', label: () => t('admin.tabs.participants'), icon: '👥', path: '/admin/participants' },
-  { key: 'AdminTracks',      label: () => t('admin.tabs.tracks'),      icon: '🗺️',  path: '/admin/tracks' },
-  { key: 'AdminCheckpoints', label: () => t('admin.tabs.checkpoints'), icon: '📍',  path: '/admin/checkpoints' },
-  { key: 'AdminMonitor',     label: () => t('admin.tabs.monitor'),     icon: '📊',  path: '/admin/monitor' },
-  { key: 'AdminRoutes',      label: () => t('admin.tabs.routes'),      icon: '🗓️',  path: '/admin/routes' },
-  { key: 'AdminSettings',    label: () => t('admin.tabs.settings'),    icon: '⚙️',  path: '/admin/settings' },
-]
+const tabs = computed(() => [
+  { key: 'AdminParticipants', label: () => t('admin.tabs.participants'), icon: '👥', path: `${basePath.value}/participants` },
+  { key: 'AdminTracks',       label: () => t('admin.tabs.tracks'),       icon: '🗺️',  path: `${basePath.value}/tracks` },
+  { key: 'AdminCheckpoints',  label: () => t('admin.tabs.checkpoints'),  icon: '📍',  path: `${basePath.value}/checkpoints` },
+  { key: 'AdminMonitor',      label: () => t('admin.tabs.monitor'),      icon: '📊',  path: `${basePath.value}/monitor` },
+  { key: 'AdminRoutes',       label: () => t('admin.tabs.routes'),       icon: '🗓️',  path: `${basePath.value}/routes` },
+  { key: 'AdminSettings',     label: () => t('admin.tabs.settings'),     icon: '⚙️',  path: `${basePath.value}/settings` },
+])
 
 const isActive = (tab) => route.name === tab.key
 </script>
@@ -42,13 +47,19 @@ const isActive = (tab) => route.name === tab.key
             <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-cover" />
           </div>
           <div>
-            <span class="font-black text-amber-400 text-lg">{{ t('app.name') }}</span>
+            <span class="font-black text-amber-400 text-lg">{{ gameContext.gameName || t('app.name') }}</span>
             <span class="ms-2 text-xs text-slate-500">Admin</span>
           </div>
         </div>
         <div class="flex items-center gap-3">
           <LanguageToggle />
-          <!-- User profile -->
+          <RouterLink
+            v-if="adminAuth.isSuperAdmin"
+            to="/superadmin"
+            class="text-xs text-amber-400 hover:text-amber-300 px-2 py-1 rounded border border-amber-700 hover:border-amber-500 transition-colors"
+          >
+            Superadmin
+          </RouterLink>
           <div v-if="adminAuth.isAuthenticated" class="flex items-center gap-2">
             <img
               v-if="adminAuth.photoURL"

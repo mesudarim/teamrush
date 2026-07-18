@@ -41,3 +41,10 @@ export const uploadMissingWordImage = async (blob, checkpointId, qIdx) => {
   const snap = await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
   return getDownloadURL(snap.ref)
 }
+
+export const uploadGameLogo = async (gameId, blob) => {
+  const ext = blob.type === 'image/png' ? 'png' : 'jpg'
+  const storageRef = ref(storage, `logos/${gameId}/logo.${ext}`)
+  const snap = await uploadBytes(storageRef, blob, { contentType: blob.type || 'image/png' })
+  return getDownloadURL(snap.ref)
+}

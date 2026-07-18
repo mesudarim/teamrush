@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Superadmins list (read-only for auth users, write only via admin SDK or superadmin) ──
+    match /superadmins/{doc} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // ── Per-game collections ──────────────────────────────────────────────────
+    match /games/{gameId} {
+      // Game metadata (name, slug) — readable by all, writable by auth
+      allow read: if true;
+      allow write: if request.auth != null;
+
+      // Admin-only sub-collections
+      match /config/{doc} {
+        allow read, write: if request.auth != null;
+      }
+      match /settings/{doc} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
+
+      // Participants — auth required for any access
+      match /participants/{participantId} {
+        allow read, write: if request.auth != null;
+      }
+
+      // Teams — readable by owner (pseudo in localStorage), writable by auth
+      match /teams/{pseudo} {
+        allow read: if true;
+        allow write: if request.auth != null || request.auth == null;
+      }
+
+      // Checkpoints & tracks — public read, admin write
+      match /checkpoints/{checkpointId} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
+      match /tracks/{trackId} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
+
+      // Media uploads
+      match /photos/{photoId} {
+        allow read: if request.auth != null;
+        allow write: if true;
+      }
+      match /audioRecordings/{recordingId} {
+        allow read: if request.auth != null;
+        allow write: if true;
+      }
+    }
+
+    // ── Legacy flat collections (kept for backward compat during migration) ───
+    match /participants/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /teams/{id} {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /checkpoints/{id} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /tracks/{id} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /config/{id} {
+      allow read, write: if request.auth != null;
+    }
+    match /photos/{id} {
+      allow read: if request.auth != null;
+      allow write: if true;
+    }
+    match /audioRecordings/{id} {
+      allow read: if request.auth != null;
+      allow write: if true;
+    }
+  }
+}

@@ -1,49 +1,18 @@
 /**
  * Firestore service layer — all DB operations go through here.
  *
- * Schema overview:
- *   /teams/{pseudo}
- *     pseudo: string (unique, doc ID)
- *     trackId: string
- *     currentCheckpointIndex: number
- *     points: number
- *     startedAt: Timestamp
- *     updatedAt: Timestamp
- *     checkpointTimes: { [checkpointId]: { startedAt, completedAt } }
- *     completedCheckpoints: string[]
- *     isFinished: boolean
+ * Multi-game schema:
+ *   /games/{gameId}/participants/{id}
+ *   /games/{gameId}/teams/{pseudo}
+ *   /games/{gameId}/tracks/{trackId}
+ *   /games/{gameId}/checkpoints/{checkpointId}
+ *   /games/{gameId}/photos/{photoId}
+ *   /games/{gameId}/audioRecordings/{recordingId}
+ *   /games/{gameId}/settings/global
+ *   /games/{gameId}/config/adminEmails
  *
- *   /tracks/{trackId}
- *     name: string
- *     nameEn: string
- *     description: string
- *     checkpointIds: string[]   // ordered list of checkpoint doc IDs
- *     isActive: boolean
- *     createdAt: Timestamp
- *
- *   /checkpoints/{checkpointId}
- *     title: string
- *     titleEn: string
- *     description: string
- *     descriptionEn: string
- *     youtubeUrl: string
- *     mapType: 'image' | 'coordinates'
- *     mapImageUrl: string
- *     mapLat: number
- *     mapLng: number
- *     mapZoom: number
- *     stage1Keyword: string
- *     missionType: 'TextValidation' | 'MultipleChoice'
- *     missionConfig: object   // varies by missionType
- *     pointsCorrect: number
- *     pointsWrong: number
- *     order: number
- *     createdAt: Timestamp
- *
- *   /settings/global
- *     introVideoUrl: string
- *     eventName: string
- *     isEventLive: boolean
+ *   /games/{gameId}         → { id, name, slug, createdAt }
+ *   /superadmins/list       → { emails: [] }
  */
 
 import {
@@ -62,21 +31,25 @@ import {
   serverTimestamp,
   increment,
   arrayUnion,
-  runTransaction,
   writeBatch,
   deleteField,
 } from 'firebase/firestore'
 import { db } from './config'
 
+// ─── Path helpers ─────────────────────────────────────────────────────────────
+
+const gcol = (gameId, colName) => collection(db, 'games', gameId, colName)
+const gdoc = (gameId, colName, docId) => doc(db, 'games', gameId, colName, docId)
+
 // ─── Participants ─────────────────────────────────────────────────────────────
 
-export const getParticipants = async () => {
-  const snap = await getDocs(query(collection(db, 'participants'), orderBy('createdAt', 'asc')))
+export const getParticipants = async (gameId) => {
+  const snap = await getDocs(query(gcol(gameId, 'participants'), orderBy('createdAt', 'asc')))
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
-export const createParticipant = async (data) => {
-  const ref = await addDoc(collection(db, 'participants'), {
+export const createParticipant = async (gameId, data) => {
+  const ref = await addDoc(gcol(gameId, 'participants'), {
     name: data.name?.trim() ?? '',
     email: data.email?.trim().toLowerCase() ?? '',
     phone: data.phone?.trim().replace(/[\s\-\.]/g, '') ?? '',
@@ -87,10 +60,10 @@ export const createParticipant = async (data) => {
   return ref.id
 }
 
-export const bulkCreateParticipants = async (list) => {
+export const bulkCreateParticipants = async (gameId, list) => {
   const batch = writeBatch(db)
   list.forEach((data) => {
-    const ref = doc(collection(db, 'participants'))
+    const ref = doc(gcol(gameId, 'participants'))
     batch.set(ref, {
       name: data.name?.trim() ?? '',
       email: data.email?.trim().toLowerCase() ?? '',
@@ -103,55 +76,49 @@ export const bulkCreateParticipants = async (list) => {
   await batch.commit()
 }
 
-export const updateParticipant = async (id, data) => {
-  await updateDoc(doc(db, 'participants', id), data)
+export const updateParticipant = async (gameId, id, data) => {
+  await updateDoc(gdoc(gameId, 'participants', id), data)
 }
 
-export const deleteParticipant = async (id) => {
-  // Read participant first to get their team pseudo (teamId = pseudo, not the participant doc ID)
-  const participantSnap = await getDoc(doc(db, 'participants', id))
+export const deleteParticipant = async (gameId, id) => {
+  const participantSnap = await getDoc(gdoc(gameId, 'participants', id))
   const teamPseudo = participantSnap.exists() ? participantSnap.data().teamId : null
 
-  await deleteDoc(doc(db, 'participants', id))
+  await deleteDoc(gdoc(gameId, 'participants', id))
 
-  // Delete team document (stored at teams/{pseudo})
   if (teamPseudo) {
-    await deleteDoc(doc(db, 'teams', teamPseudo))
+    await deleteDoc(gdoc(gameId, 'teams', teamPseudo))
   }
 }
 
-export const subscribeToParticipants = (callback) =>
-  onSnapshot(query(collection(db, 'participants'), orderBy('createdAt', 'asc')), (snap) =>
+export const subscribeToParticipants = (gameId, callback) =>
+  onSnapshot(query(gcol(gameId, 'participants'), orderBy('createdAt', 'asc')), (snap) =>
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   )
 
-// Find a participant by phone (or name/email as fallback)
-export const findParticipantByIdentifier = async (query_) => {
+export const findParticipantByIdentifier = async (gameId, query_) => {
   const raw        = query_.trim()
   const normalized = raw.replace(/[\s\-\.]/g, '')
   const isDigitsOnly = /^\d+$/.test(normalized)
 
   if (isDigitsOnly) {
-    // Login field is phone-only — single targeted query, much faster on mobile
-    const phoneSnap = await getDocs(query(collection(db, 'participants'), where('phone', '==', normalized)))
+    const phoneSnap = await getDocs(query(gcol(gameId, 'participants'), where('phone', '==', normalized)))
     if (phoneSnap.docs.length > 0) {
       const d = phoneSnap.docs[0]
       return { id: d.id, ...d.data() }
     }
   } else {
-    // Non-digit input (admin testing) — query name and email in parallel
     const lower = raw.toLowerCase()
     const [nameSnap, emailSnap] = await Promise.all([
-      getDocs(query(collection(db, 'participants'), where('name', '==', raw))),
-      getDocs(query(collection(db, 'participants'), where('email', '==', lower))),
+      getDocs(query(gcol(gameId, 'participants'), where('name', '==', raw))),
+      getDocs(query(gcol(gameId, 'participants'), where('email', '==', lower))),
     ])
     const fastDoc = [...nameSnap.docs, ...emailSnap.docs][0]
     if (fastDoc) return { id: fastDoc.id, ...fastDoc.data() }
   }
 
-  // Fallback: full scan (handles format mismatches, e.g. stored without country code)
   const lower = raw.toLowerCase()
-  const snap = await getDocs(collection(db, 'participants'))
+  const snap = await getDocs(gcol(gameId, 'participants'))
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
     .find(p =>
@@ -163,31 +130,26 @@ export const findParticipantByIdentifier = async (query_) => {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
-// participant is the full participant document — used to copy pre-assigned routes on first login
-export const createTeam = async (pseudo, trackId, displayName = '', participant = null, day = 1) => {
-  const ref = doc(db, 'teams', pseudo)
+export const createTeam = async (gameId, pseudo, trackId, displayName = '', participant = null, day = 1) => {
+  const ref = gdoc(gameId, 'teams', pseudo)
   const existing = await getDoc(ref)
 
-  // Use participant's pre-assigned trackId if available
   const resolvedTrackId = participant?.assignedTrackId ?? trackId
 
   if (existing.exists()) {
     const existingData = existing.data()
 
-    // Block replay: player already finished this day
     if (day === 1 && existingData.day1Finished) throw new Error('DAY1_ALREADY_FINISHED')
     if (day === 2 && existingData.day === 2 && existingData.isFinished) throw new Error('DAY2_ALREADY_FINISHED')
 
     const updateData = { displayName, updatedAt: serverTimestamp() }
 
-    // Copy routes if team doesn't have them yet but participant does
     if (participant?.day1Order?.length && !existingData.day1Order?.length) {
       updateData.day1Order = participant.day1Order
       updateData.day2Order = participant.day2Order
       updateData.trackId = resolvedTrackId
     }
 
-    // Switch day if the login URL is for a different day — reset progress for the new day
     if (day !== (existingData.day ?? 1)) {
       updateData.day = day
       updateData.currentCheckpointIndex = 0
@@ -222,37 +184,31 @@ export const createTeam = async (pseudo, trackId, displayName = '', participant 
   return { id: pseudo, ...teamData, startedAt: new Date(), updatedAt: new Date() }
 }
 
-export const getTeam = async (pseudo) => {
-  const snap = await getDoc(doc(db, 'teams', pseudo))
+export const getTeam = async (gameId, pseudo) => {
+  const snap = await getDoc(gdoc(gameId, 'teams', pseudo))
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
 
-// Switch a logged-in team to a different day (used when player opens /day2 while already logged in)
-export const switchTeamDay = async (pseudo, day) => {
-  const ref = doc(db, 'teams', pseudo)
+export const switchTeamDay = async (gameId, pseudo, day) => {
+  const ref = gdoc(gameId, 'teams', pseudo)
   const snap = await getDoc(ref)
   if (!snap.exists()) return
 
   const data = snap.data()
-  // Block replay of a completed Day 2 (login-level guard; viewing end screen is fine)
   if (day === 2 && data.isFinished) throw new Error('DAY2_ALREADY_FINISHED')
 
   const currentDay = data.day ?? 1
-  if (currentDay === day) return  // already on this day, nothing to do
+  if (currentDay === day) return
 
-  // Save current day's progress, restore the target day's saved progress.
-  // This lets players switch between Day 1 and Day 2 URLs and land exactly
-  // where they left off in each day.
   const updates = { day, updatedAt: serverTimestamp() }
 
   if (currentDay === 1 && day === 2) {
     updates.day1SavedIndex = data.currentCheckpointIndex ?? 0
     updates.day1SavedPhase = data.currentPhase ?? null
-    // Snapshot Day 1 final score so Day 2 play doesn't overwrite it
     if (!data.day1Points) updates.day1Points = data.points ?? 0
     updates.currentCheckpointIndex = data.day2SavedIndex ?? 0
     updates.currentPhase = data.day2SavedPhase ?? null
-    updates.points = 0   // reset running score for Day 2
+    updates.points = 0
     updates.isFinished = false
   } else if (currentDay === 2 && day === 1) {
     updates.day2SavedIndex = data.currentCheckpointIndex ?? 0
@@ -260,17 +216,14 @@ export const switchTeamDay = async (pseudo, day) => {
     updates.day2Points = data.points ?? 0
     updates.currentCheckpointIndex = data.day1SavedIndex ?? 0
     updates.currentPhase = data.day1SavedPhase ?? null
-    updates.points = data.day1Points ?? 0   // restore Day 1 score display
+    updates.points = data.day1Points ?? 0
   }
 
   await updateDoc(ref, updates)
 }
 
-// Reset a single player's Day 2 progress — keeps Day 1 results intact.
-// resetToken changes so the active player's subscription can detect the reset
-// and reload even when the day field stays the same (Day 2 → Day 2).
-export const resetTeamDay2 = async (pseudo) => {
-  await updateDoc(doc(db, 'teams', pseudo), {
+export const resetTeamDay2 = async (gameId, pseudo) => {
+  await updateDoc(gdoc(gameId, 'teams', pseudo), {
     day:                    2,
     currentCheckpointIndex: 0,
     currentPhase:           null,
@@ -287,18 +240,17 @@ export const resetTeamDay2 = async (pseudo) => {
   })
 }
 
-export const adjustPoints = async (pseudo, delta) => {
-  await updateDoc(doc(db, 'teams', pseudo), {
+export const adjustPoints = async (gameId, pseudo, delta) => {
+  await updateDoc(gdoc(gameId, 'teams', pseudo), {
     points: increment(delta),
     updatedAt: serverTimestamp(),
   })
 }
 
-// Admin: reset ALL teams + participants to pre-game state (keeps routes + names)
-export const resetAllTeams = async () => {
+export const resetAllTeams = async (gameId) => {
   const [teamsSnap, participantsSnap] = await Promise.all([
-    getDocs(collection(db, 'teams')),
-    getDocs(collection(db, 'participants')),
+    getDocs(gcol(gameId, 'teams')),
+    getDocs(gcol(gameId, 'participants')),
   ])
 
   const BATCH_SIZE = 400
@@ -317,9 +269,8 @@ export const resetAllTeams = async () => {
   }
 }
 
-// Persist the in-checkpoint phase so players can resume exactly where they left off
-export const resetTeamProgress = async (pseudo, trackId) => {
-  await updateDoc(doc(db, 'teams', pseudo), {
+export const resetTeamProgress = async (gameId, pseudo, trackId) => {
+  await updateDoc(gdoc(gameId, 'teams', pseudo), {
     currentCheckpointIndex: 0,
     points: 0,
     completedCheckpoints: [],
@@ -333,31 +284,35 @@ export const resetTeamProgress = async (pseudo, trackId) => {
   })
 }
 
-export const saveTeamPhase = async (pseudo, phase, questionIndex = 0) => {
-  await updateDoc(doc(db, 'teams', pseudo), {
+export const saveTeamPhase = async (gameId, pseudo, phase, questionIndex = 0) => {
+  await updateDoc(gdoc(gameId, 'teams', pseudo), {
     currentPhase: phase,
     savedQuestionIndex: questionIndex,
     updatedAt: serverTimestamp(),
   })
 }
 
-export const setPreLaunchDone = async (pseudo, day = 1) => {
+export const saveTeamDayOrder = async (gameId, pseudo, day, order) => {
+  const field = day === 2 ? 'day2Order' : 'day1Order'
+  await updateDoc(gdoc(gameId, 'teams', pseudo), { [field]: order })
+}
+
+export const setPreLaunchDone = async (gameId, pseudo, day = 1) => {
   const updates = {
     currentPhase: 'envelope1',
     savedQuestionIndex: 0,
     updatedAt: serverTimestamp(),
   }
   if (day === 2) {
-    // Day 2 uses its own flag so Day 1's preLaunchDone doesn't block it
     updates.preLaunchDay2Done = true
     updates.day2StartedAt = serverTimestamp()
   } else {
     updates.preLaunchDone = true
   }
-  await updateDoc(doc(db, 'teams', pseudo), updates)
+  await updateDoc(gdoc(gameId, 'teams', pseudo), updates)
 }
 
-export const updateTeamProgress = async (pseudo, checkpointId, { missionAnswer } = {}) => {
+export const updateTeamProgress = async (gameId, pseudo, checkpointId, { missionAnswer } = {}) => {
   const update = {
     currentCheckpointIndex: increment(1),
     completedCheckpoints: arrayUnion(checkpointId),
@@ -369,18 +324,18 @@ export const updateTeamProgress = async (pseudo, checkpointId, { missionAnswer }
   if (missionAnswer) {
     update[`checkpointTimes.${checkpointId}.missionAnswer`] = missionAnswer
   }
-  await updateDoc(doc(db, 'teams', pseudo), update)
+  await updateDoc(gdoc(gameId, 'teams', pseudo), update)
 }
 
-export const startCheckpointTimer = async (pseudo, checkpointId) => {
-  await updateDoc(doc(db, 'teams', pseudo), {
+export const startCheckpointTimer = async (gameId, pseudo, checkpointId) => {
+  await updateDoc(gdoc(gameId, 'teams', pseudo), {
     [`checkpointTimes.${checkpointId}.startedAt`]: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
 }
 
-export const markTeamFinished = async (pseudo, timeBonusPoints = 0) => {
-  await updateDoc(doc(db, 'teams', pseudo), {
+export const markTeamFinished = async (gameId, pseudo, timeBonusPoints = 0) => {
+  await updateDoc(gdoc(gameId, 'teams', pseudo), {
     isFinished: true,
     finishedAt: serverTimestamp(),
     timeBonusPoints,
@@ -388,42 +343,39 @@ export const markTeamFinished = async (pseudo, timeBonusPoints = 0) => {
     currentPhase: null,
     updatedAt: serverTimestamp(),
   })
-  // Sync participant status so the admin panel reflects the correct state
-  const pRef = doc(db, 'participants', pseudo)
+  const pRef = gdoc(gameId, 'participants', pseudo)
   const pSnap = await getDoc(pRef)
   if (pSnap.exists()) await updateDoc(pRef, { loggedIn: false, finished: true })
 }
 
-export const subscribeToTeam = (pseudo, callback) =>
-  onSnapshot(doc(db, 'teams', pseudo), (snap) => {
+export const subscribeToTeam = (gameId, pseudo, callback) =>
+  onSnapshot(gdoc(gameId, 'teams', pseudo), (snap) => {
     if (snap.exists()) callback({ id: snap.id, ...snap.data() })
   })
 
-export const subscribeToAllTeams = (callback) =>
+export const subscribeToAllTeams = (gameId, callback) =>
   onSnapshot(
-    query(collection(db, 'teams'), orderBy('points', 'desc')),
+    query(gcol(gameId, 'teams'), orderBy('points', 'desc')),
     (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   )
 
-export const getAllTeams = async () => {
-  const snap = await getDocs(collection(db, 'teams'))
+export const getAllTeams = async (gameId) => {
+  const snap = await getDocs(gcol(gameId, 'teams'))
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
-export const deleteTeam = async (id) => {
-  await deleteDoc(doc(db, 'teams', id))
+export const deleteTeam = async (gameId, id) => {
+  await deleteDoc(gdoc(gameId, 'teams', id))
 }
 
 // ─── Two-day system ───────────────────────────────────────────────────────────
 
-// Assign unique routes to participants (stored BEFORE login, copied to team on login)
-// assignments = [{ participantId, trackId, day1Order, day2Order }, ...]
-export const assignRoutesToParticipants = async (assignments) => {
+export const assignRoutesToParticipants = async (gameId, assignments) => {
   const BATCH_SIZE = 400
   for (let i = 0; i < assignments.length; i += BATCH_SIZE) {
     const batch = writeBatch(db)
     assignments.slice(i, i + BATCH_SIZE).forEach(({ participantId, trackId, day1Order, day2Order }) => {
-      batch.update(doc(db, 'participants', participantId), {
+      batch.update(gdoc(gameId, 'participants', participantId), {
         day1Order,
         day2Order,
         assignedTrackId: trackId,
@@ -435,21 +387,19 @@ export const assignRoutesToParticipants = async (assignments) => {
   }
 }
 
-// Legacy alias kept for teams that already exist
 export const assignRoutes = assignRoutesToParticipants
 
-// Admin: switch back to Day 1 — restores archived day1Points, resets day 2 progress
-export const activateDay1 = async () => {
-  const snap = await getDocs(collection(db, 'teams'))
+export const activateDay1 = async (gameId) => {
+  const snap = await getDocs(gcol(gameId, 'teams'))
   const teams = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 
   const BATCH_SIZE = 400
   for (let i = 0; i < teams.length; i += BATCH_SIZE) {
     const batch = writeBatch(db)
     teams.slice(i, i + BATCH_SIZE).forEach((team) => {
-      batch.update(doc(db, 'teams', team.id), {
+      batch.update(gdoc(gameId, 'teams', team.id), {
         day: 1,
-        points: team.day1Points ?? 0,   // restore archived Day 1 points
+        points: team.day1Points ?? 0,
         currentCheckpointIndex: 0,
         isFinished: false,
         day1Finished: false,
@@ -465,9 +415,8 @@ export const activateDay1 = async () => {
   }
 }
 
-// Mark a team as having finished Day 1 (waiting for Day 2 activation)
-export const markDay1Complete = async (pseudo, timeBonusPoints = 0) => {
-  await updateDoc(doc(db, 'teams', pseudo), {
+export const markDay1Complete = async (gameId, pseudo, timeBonusPoints = 0) => {
+  await updateDoc(gdoc(gameId, 'teams', pseudo), {
     day1Finished: true,
     day1BonusPoints: timeBonusPoints,
     day1FinishedAt: serverTimestamp(),
@@ -475,22 +424,20 @@ export const markDay1Complete = async (pseudo, timeBonusPoints = 0) => {
     currentPhase: null,
     updatedAt: serverTimestamp(),
   })
-  // Mirror to participant so admin panels show correct status
-  const pRef = doc(db, 'participants', pseudo)
+  const pRef = gdoc(gameId, 'participants', pseudo)
   const pSnap = await getDoc(pRef)
   if (pSnap.exists()) await updateDoc(pRef, { loggedIn: false, day1Finished: true })
 }
 
-// Admin: activate Day 2 for all teams (archive Day 1 points, reset for Day 2)
-export const activateDay2 = async () => {
-  const snap = await getDocs(collection(db, 'teams'))
+export const activateDay2 = async (gameId) => {
+  const snap = await getDocs(gcol(gameId, 'teams'))
   const teams = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 
   const BATCH_SIZE = 400
   for (let i = 0; i < teams.length; i += BATCH_SIZE) {
     const batch = writeBatch(db)
     teams.slice(i, i + BATCH_SIZE).forEach((team) => {
-      batch.update(doc(db, 'teams', team.id), {
+      batch.update(gdoc(gameId, 'teams', team.id), {
         day: 2,
         day1Points: team.points ?? 0,
         points: 0,
@@ -511,40 +458,38 @@ export const activateDay2 = async () => {
 
 // ─── Tracks ───────────────────────────────────────────────────────────────────
 
-export const getTracks = async () => {
-  const snap = await getDocs(query(collection(db, 'tracks'), orderBy('createdAt', 'asc')))
+export const getTracks = async (gameId) => {
+  const snap = await getDocs(query(gcol(gameId, 'tracks'), orderBy('createdAt', 'asc')))
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
-export const getActiveTracks = async () => {
-  const snap = await getDocs(query(collection(db, 'tracks'), where('isActive', '==', true)))
+export const getActiveTracks = async (gameId) => {
+  const snap = await getDocs(query(gcol(gameId, 'tracks'), where('isActive', '==', true)))
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
-export const getTrack = async (trackId) => {
-  const snap = await getDoc(doc(db, 'tracks', trackId))
+export const getTrack = async (gameId, trackId) => {
+  const snap = await getDoc(gdoc(gameId, 'tracks', trackId))
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
 
-export const createTrack = async (data) => {
-  const ref = await addDoc(collection(db, 'tracks'), { ...data, createdAt: serverTimestamp() })
+export const createTrack = async (gameId, data) => {
+  const ref = await addDoc(gcol(gameId, 'tracks'), { ...data, createdAt: serverTimestamp() })
   return ref.id
 }
 
-export const updateTrack = async (trackId, data) => {
-  await updateDoc(doc(db, 'tracks', trackId), { ...data, updatedAt: serverTimestamp() })
+export const updateTrack = async (gameId, trackId, data) => {
+  await updateDoc(gdoc(gameId, 'tracks', trackId), { ...data, updatedAt: serverTimestamp() })
 }
 
-// Player exit: delete the team entirely so the participant returns to 'waiting' state
-export const deleteTeamDoc = async (pseudo) => {
-  await deleteDoc(doc(db, 'teams', pseudo))
+export const deleteTeamDoc = async (gameId, pseudo) => {
+  await deleteDoc(gdoc(gameId, 'teams', pseudo))
 }
 
-// Admin: delete team documents that have no matching participant (leftover from testing)
-export const cleanOrphanTeams = async () => {
+export const cleanOrphanTeams = async (gameId) => {
   const [teamsSnap, participantsSnap] = await Promise.all([
-    getDocs(collection(db, 'teams')),
-    getDocs(collection(db, 'participants')),
+    getDocs(gcol(gameId, 'teams')),
+    getDocs(gcol(gameId, 'participants')),
   ])
   const participantIds = new Set(participantsSnap.docs.map(d => d.id))
   const orphans = teamsSnap.docs.filter(d => !participantIds.has(d.id))
@@ -552,49 +497,49 @@ export const cleanOrphanTeams = async () => {
   return orphans.length
 }
 
-export const deleteTrack = async (trackId) => {
-  await deleteDoc(doc(db, 'tracks', trackId))
+export const deleteTrack = async (gameId, trackId) => {
+  await deleteDoc(gdoc(gameId, 'tracks', trackId))
 }
 
-export const subscribeToTracks = (callback) =>
-  onSnapshot(query(collection(db, 'tracks'), orderBy('createdAt', 'asc')), (snap) =>
+export const subscribeToTracks = (gameId, callback) =>
+  onSnapshot(query(gcol(gameId, 'tracks'), orderBy('createdAt', 'asc')), (snap) =>
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   )
 
 // ─── Checkpoints ──────────────────────────────────────────────────────────────
 
-export const getCheckpoints = async () => {
-  const snap = await getDocs(query(collection(db, 'checkpoints'), orderBy('createdAt', 'asc')))
+export const getCheckpoints = async (gameId) => {
+  const snap = await getDocs(query(gcol(gameId, 'checkpoints'), orderBy('createdAt', 'asc')))
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
-export const getCheckpoint = async (checkpointId) => {
-  const snap = await getDoc(doc(db, 'checkpoints', checkpointId))
+export const getCheckpoint = async (gameId, checkpointId) => {
+  const snap = await getDoc(gdoc(gameId, 'checkpoints', checkpointId))
   return snap.exists() ? { id: snap.id, ...snap.data() } : null
 }
 
-export const createCheckpoint = async (data) => {
-  const ref = await addDoc(collection(db, 'checkpoints'), { ...data, createdAt: serverTimestamp() })
+export const createCheckpoint = async (gameId, data) => {
+  const ref = await addDoc(gcol(gameId, 'checkpoints'), { ...data, createdAt: serverTimestamp() })
   return ref.id
 }
 
-export const updateCheckpoint = async (checkpointId, data) => {
-  await updateDoc(doc(db, 'checkpoints', checkpointId), { ...data, updatedAt: serverTimestamp() })
+export const updateCheckpoint = async (gameId, checkpointId, data) => {
+  await updateDoc(gdoc(gameId, 'checkpoints', checkpointId), { ...data, updatedAt: serverTimestamp() })
 }
 
-export const deleteCheckpoint = async (checkpointId) => {
-  await deleteDoc(doc(db, 'checkpoints', checkpointId))
+export const deleteCheckpoint = async (gameId, checkpointId) => {
+  await deleteDoc(gdoc(gameId, 'checkpoints', checkpointId))
 }
 
-export const subscribeToCheckpoints = (callback) =>
-  onSnapshot(query(collection(db, 'checkpoints'), orderBy('createdAt', 'asc')), (snap) =>
+export const subscribeToCheckpoints = (gameId, callback) =>
+  onSnapshot(query(gcol(gameId, 'checkpoints'), orderBy('createdAt', 'asc')), (snap) =>
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   )
 
 // ─── Photos ───────────────────────────────────────────────────────────────────
 
-export const savePhotoRecord = async (data) => {
-  await addDoc(collection(db, 'photos'), {
+export const savePhotoRecord = async (gameId, data) => {
+  await addDoc(gcol(gameId, 'photos'), {
     teamPseudo:      data.teamPseudo,
     teamName:        data.teamName ?? data.teamPseudo,
     checkpointId:    data.checkpointId,
@@ -604,16 +549,16 @@ export const savePhotoRecord = async (data) => {
   })
 }
 
-export const subscribeToPhotos = (callback) =>
+export const subscribeToPhotos = (gameId, callback) =>
   onSnapshot(
-    query(collection(db, 'photos'), orderBy('uploadedAt', 'desc')),
+    query(gcol(gameId, 'photos'), orderBy('uploadedAt', 'desc')),
     (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   )
 
 // ─── Audio Recordings ─────────────────────────────────────────────────────────
 
-export const saveAudioRecord = async (data) => {
-  await addDoc(collection(db, 'audioRecordings'), {
+export const saveAudioRecord = async (gameId, data) => {
+  await addDoc(gcol(gameId, 'audioRecordings'), {
     teamPseudo:      data.teamPseudo,
     teamName:        data.teamName ?? data.teamPseudo,
     checkpointId:    data.checkpointId,
@@ -625,35 +570,35 @@ export const saveAudioRecord = async (data) => {
   })
 }
 
-export const subscribeToAudioRecordings = (callback) =>
+export const subscribeToAudioRecordings = (gameId, callback) =>
   onSnapshot(
-    query(collection(db, 'audioRecordings'), orderBy('uploadedAt', 'desc')),
+    query(gcol(gameId, 'audioRecordings'), orderBy('uploadedAt', 'desc')),
     (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
   )
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
-export const getSettings = async () => {
-  const snap = await getDoc(doc(db, 'settings', 'global'))
+export const getSettings = async (gameId) => {
+  const snap = await getDoc(doc(db, 'games', gameId, 'settings', 'global'))
   return snap.exists() ? snap.data() : {}
 }
 
-export const updateSettings = async (data) => {
-  await setDoc(doc(db, 'settings', 'global'), data, { merge: true })
+export const updateSettings = async (gameId, data) => {
+  await setDoc(doc(db, 'games', gameId, 'settings', 'global'), data, { merge: true })
 }
 
-export const subscribeToSettings = (callback) =>
-  onSnapshot(doc(db, 'settings', 'global'), (snap) => {
+export const subscribeToSettings = (gameId, callback) =>
+  onSnapshot(doc(db, 'games', gameId, 'settings', 'global'), (snap) => {
     if (snap.exists()) callback(snap.data())
   })
 
 // ─── Admin Emails ──────────────────────────────────────────────────────────────
 
-export const getAdminEmails = async () => {
-  const snap = await getDoc(doc(db, 'config', 'adminEmails'))
+export const getAdminEmails = async (gameId) => {
+  const snap = await getDoc(doc(db, 'games', gameId, 'config', 'adminEmails'))
   return snap.exists() ? (snap.data().emails ?? []) : []
 }
 
-export const saveAdminEmails = async (emails) => {
-  await setDoc(doc(db, 'config', 'adminEmails'), { emails })
+export const saveAdminEmails = async (gameId, emails) => {
+  await setDoc(doc(db, 'games', gameId, 'config', 'adminEmails'), { emails })
 }

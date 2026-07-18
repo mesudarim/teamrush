@@ -1,7 +1,6 @@
 <!--
-  FreeCropper — free-form (non-square) crop tool.
-  Drag the center to move, drag any corner to resize freely.
-  Output: JPEG blob, max 500px wide (aspect ratio preserved).
+  FreeCropper — crop tool with optional locked aspect ratio.
+  When aspectRatio is set (e.g. 4/3), corners maintain that ratio.
   Emits: confirm(blob)  cancel()
 -->
 <script setup>
@@ -9,19 +8,19 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
-const props = defineProps({ src: { type: String, required: true } })
-const emit  = defineEmits(['confirm', 'cancel'])
+const props = defineProps({
+  src:         { type: String, required: true },
+  aspectRatio: { type: Number, default: null },   // e.g. 4/3 — null = free
+})
+const emit = defineEmits(['confirm', 'cancel'])
 
-const MAX_OUT_W = 500
-const MIN_SIZE  = 20   // minimum crop dimension in natural pixels
+const MAX_OUT_W = 400
+const MIN_SIZE  = 20
 
-// ── Display size (fit inside 350×420 box) ────────────────────────────────────
 const natW  = ref(1), natH  = ref(1)
 const dispW = ref(1), dispH = ref(1)
-
 const containerRef = ref(null)
 
-// ── Crop rectangle (natural pixel coords) ────────────────────────────────────
 const cropX = ref(0), cropY = ref(0)
 const cropW = ref(0), cropH = ref(0)
 
@@ -34,6 +33,23 @@ const ov = computed(() => ({
   height: Math.round(cropH.value * scale.value),
 }))
 
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+const initCrop = (imgW, imgH) => {
+  const ratio = props.aspectRatio
+  if (ratio) {
+    let cw, ch
+    if (imgW / imgH > ratio) { ch = imgH; cw = Math.round(ch * ratio) }
+    else                      { cw = imgW; ch = Math.round(cw / ratio) }
+    cropX.value = Math.round((imgW - cw) / 2)
+    cropY.value = Math.round((imgH - ch) / 2)
+    cropW.value = cw; cropH.value = ch
+  } else {
+    cropX.value = 0; cropY.value = 0
+    cropW.value = imgW; cropH.value = imgH
+  }
+}
+
 onMounted(() => {
   const img = new Image()
   img.onload = () => {
@@ -42,21 +58,25 @@ onMounted(() => {
     const s = Math.min(350 / img.naturalWidth, 420 / img.naturalHeight, 1)
     dispW.value = Math.round(img.naturalWidth  * s)
     dispH.value = Math.round(img.naturalHeight * s)
-    cropX.value = 0; cropY.value = 0
-    cropW.value = img.naturalWidth; cropH.value = img.naturalHeight
+    initCrop(img.naturalWidth, img.naturalHeight)
   }
   img.src = props.src
 })
 
-// ── Drag logic ────────────────────────────────────────────────────────────────
-let dragMode   = null   // 'move' | 'nw' | 'ne' | 'sw' | 'se'
+// ── Drag ─────────────────────────────────────────────────────────────────────
+
+let dragMode = null
 let dragAnchor = null
 
-const clamp   = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+const clamp  = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 const mouseNat = (e) => {
   const rect = containerRef.value?.getBoundingClientRect()
   if (!rect) return { x: 0, y: 0 }
-  return { x: (e.clientX - rect.left) / scale.value, y: (e.clientY - rect.top) / scale.value }
+  const src = e.touches?.[0] ?? e
+  return {
+    x: (src.clientX - rect.left) / scale.value,
+    y: (src.clientY - rect.top)  / scale.value,
+  }
 }
 
 const onBoxDown = (e) => {
@@ -70,7 +90,6 @@ const onCornerDown = (corner, e) => {
   e.preventDefault(); e.stopPropagation()
   dragMode = corner
   const ox = cropX.value, oy = cropY.value, ow = cropW.value, oh = cropH.value
-  // anchor = opposite corner (fixed point)
   if (corner === 'nw') dragAnchor = { ax: ox + ow, ay: oy + oh }
   if (corner === 'ne') dragAnchor = { ax: ox,      ay: oy + oh }
   if (corner === 'sw') dragAnchor = { ax: ox + ow, ay: oy      }
@@ -80,39 +99,72 @@ const onCornerDown = (corner, e) => {
 const onPointerMove = (e) => {
   if (!dragMode || !dragAnchor) return
   const m = mouseNat(e)
+  const ratio = props.aspectRatio
+  const W = natW.value, H = natH.value
 
   if (dragMode === 'move') {
-    cropX.value = clamp(dragAnchor.cx + (m.x - dragAnchor.mx), 0, natW.value - cropW.value)
-    cropY.value = clamp(dragAnchor.cy + (m.y - dragAnchor.my), 0, natH.value - cropH.value)
+    cropX.value = clamp(dragAnchor.cx + (m.x - dragAnchor.mx), 0, W - cropW.value)
+    cropY.value = clamp(dragAnchor.cy + (m.y - dragAnchor.my), 0, H - cropH.value)
     return
   }
 
   const { ax, ay } = dragAnchor
-  let nx, ny, nw, nh
+  let nx = 0, ny = 0, nw = MIN_SIZE, nh = MIN_SIZE
 
-  if (dragMode === 'nw') {
-    nx = clamp(Math.min(m.x, ax - MIN_SIZE), 0, ax - MIN_SIZE)
-    ny = clamp(Math.min(m.y, ay - MIN_SIZE), 0, ay - MIN_SIZE)
-    nw = ax - nx;  nh = ay - ny
-  } else if (dragMode === 'ne') {
-    nx = ax
-    ny = clamp(Math.min(m.y, ay - MIN_SIZE), 0, ay - MIN_SIZE)
-    nw = clamp(m.x - ax, MIN_SIZE, natW.value - ax)
-    nh = ay - ny
-  } else if (dragMode === 'sw') {
-    nx = clamp(Math.min(m.x, ax - MIN_SIZE), 0, ax - MIN_SIZE)
-    ny = ay
-    nw = ax - nx
-    nh = clamp(m.y - ay, MIN_SIZE, natH.value - ay)
-  } else {  // se
-    nx = ax;  ny = ay
-    nw = clamp(m.x - ax, MIN_SIZE, natW.value - ax)
-    nh = clamp(m.y - ay, MIN_SIZE, natH.value - ay)
+  if (ratio) {
+    // ── Ratio-locked: width from x-movement, height = width / ratio ─────────
+    // Height clamped to image bounds → re-derive width if needed.
+
+    if (dragMode === 'nw') {                     // anchor: bottom-right
+      nw = clamp(ax - m.x, MIN_SIZE, ax)
+      nh = nw / ratio
+      if (ay - nh < 0) { nh = ay; nw = nh * ratio }
+      nx = ax - nw; ny = ay - nh
+
+    } else if (dragMode === 'ne') {              // anchor: bottom-left
+      nw = clamp(m.x - ax, MIN_SIZE, W - ax)
+      nh = nw / ratio
+      if (ay - nh < 0) { nh = ay; nw = nh * ratio }
+      nx = ax; ny = ay - nh
+
+    } else if (dragMode === 'sw') {              // anchor: top-right
+      nw = clamp(ax - m.x, MIN_SIZE, ax)
+      nh = nw / ratio
+      if (ay + nh > H) { nh = H - ay; nw = nh * ratio }
+      nx = ax - nw; ny = ay
+
+    } else {                                     // se — anchor: top-left
+      nw = clamp(m.x - ax, MIN_SIZE, W - ax)
+      nh = nw / ratio
+      if (ay + nh > H) { nh = H - ay; nw = nh * ratio }
+      nx = ax; ny = ay
+    }
+
+  } else {
+    // ── Free mode ────────────────────────────────────────────────────────────
+    if (dragMode === 'nw') {
+      nx = clamp(m.x, 0, ax - MIN_SIZE); ny = clamp(m.y, 0, ay - MIN_SIZE)
+      nw = ax - nx; nh = ay - ny
+    } else if (dragMode === 'ne') {
+      nx = ax;  ny = clamp(m.y, 0, ay - MIN_SIZE)
+      nw = clamp(m.x - ax, MIN_SIZE, W - ax); nh = ay - ny
+    } else if (dragMode === 'sw') {
+      nx = clamp(m.x, 0, ax - MIN_SIZE); ny = ay
+      nw = ax - nx; nh = clamp(m.y - ay, MIN_SIZE, H - ay)
+    } else {
+      nx = ax; ny = ay
+      nw = clamp(m.x - ax, MIN_SIZE, W - ax); nh = clamp(m.y - ay, MIN_SIZE, H - ay)
+    }
   }
 
-  if (nw >= MIN_SIZE && nh >= MIN_SIZE) {
-    cropX.value = Math.round(nx); cropY.value = Math.round(ny)
-    cropW.value = Math.round(nw); cropH.value = Math.round(nh)
+  nx = Math.round(Math.max(0, nx))
+  ny = Math.round(Math.max(0, ny))
+  nw = Math.round(Math.max(MIN_SIZE, nw))
+  nh = Math.round(Math.max(MIN_SIZE, nh))
+
+  if (nx + nw <= W && ny + nh <= H) {
+    cropX.value = nx; cropY.value = ny
+    cropW.value = nw; cropH.value = nh
   }
 }
 
@@ -120,14 +172,15 @@ const onPointerUp = () => { dragMode = null; dragAnchor = null }
 
 onMounted(() => {
   window.addEventListener('pointermove', onPointerMove)
-  window.addEventListener('pointerup', onPointerUp)
+  window.addEventListener('pointerup',   onPointerUp)
 })
 onUnmounted(() => {
   window.removeEventListener('pointermove', onPointerMove)
-  window.removeEventListener('pointerup', onPointerUp)
+  window.removeEventListener('pointerup',   onPointerUp)
 })
 
-// ── Output size display ───────────────────────────────────────────────────────
+// ── Output label ─────────────────────────────────────────────────────────────
+
 const outputLabel = computed(() => {
   if (!cropW.value) return ''
   const outW = Math.min(cropW.value, MAX_OUT_W)
@@ -135,7 +188,8 @@ const outputLabel = computed(() => {
   return `${outW} × ${outH} px`
 })
 
-// ── Export ────────────────────────────────────────────────────────────────────
+// ── Export ───────────────────────────────────────────────────────────────────
+
 const confirming = ref(false)
 const confirm = () => {
   confirming.value = true
@@ -151,7 +205,7 @@ const confirm = () => {
       Math.round(cropW.value), Math.round(cropH.value),
       0, 0, outW, outH
     )
-    canvas.toBlob(blob => { emit('confirm', blob); confirming.value = false }, 'image/jpeg', 0.88)
+    canvas.toBlob(blob => { emit('confirm', blob); confirming.value = false }, 'image/jpeg', 0.9)
   }
   img.src = props.src
 }
@@ -163,7 +217,12 @@ const confirm = () => {
 
       <!-- Header -->
       <div class="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-        <h3 class="font-bold text-white text-sm">✂️ {{ t('admin.checkpoints.freeCropTitle') }}</h3>
+        <div class="flex items-center gap-2">
+          <h3 class="font-bold text-white text-sm">✂️ {{ t('admin.checkpoints.freeCropTitle') }}</h3>
+          <span v-if="aspectRatio" class="text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">
+            4:3 verrouillé
+          </span>
+        </div>
         <button @click="emit('cancel')" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
       </div>
 
@@ -179,7 +238,7 @@ const confirm = () => {
                style="object-fit:fill; user-select:none; -webkit-user-drag:none;"
                draggable="false" />
 
-          <!-- Dark overlay — 4 rects around selection -->
+          <!-- Dark overlay around selection -->
           <div class="absolute bg-black/55 pointer-events-none"
                :style="{ left:0, top:0, width: dispW+'px', height: ov.top+'px' }" />
           <div class="absolute bg-black/55 pointer-events-none"
@@ -195,7 +254,9 @@ const confirm = () => {
             :style="{ left:ov.left+'px', top:ov.top+'px', width:ov.width+'px', height:ov.height+'px', boxSizing:'border-box', touchAction:'none' }"
             @pointerdown="onBoxDown"
           >
-            <!-- 4 corner handles -->
+            <!-- Grid lines -->
+            <div class="absolute inset-0 pointer-events-none" style="background: repeating-linear-gradient(0deg,transparent,transparent calc(33.3% - 0.5px),rgba(255,200,50,0.25) calc(33.3% - 0.5px),rgba(255,200,50,0.25) 33.3%) , repeating-linear-gradient(90deg,transparent,transparent calc(33.3% - 0.5px),rgba(255,200,50,0.25) calc(33.3% - 0.5px),rgba(255,200,50,0.25) 33.3%)" />
+            <!-- Corners -->
             <div class="absolute bg-amber-400 rounded-sm cursor-nw-resize"
                  style="top:-8px;left:-8px;width:16px;height:16px;touch-action:none;"
                  @pointerdown="onCornerDown('nw',$event)" />
@@ -212,7 +273,7 @@ const confirm = () => {
         </div>
       </div>
 
-      <!-- Size + hint -->
+      <!-- Size info -->
       <div class="text-center px-4 pb-1 space-y-0.5">
         <p class="text-xs text-amber-400 font-semibold tabular-nums">{{ outputLabel }}</p>
         <p class="text-xs text-slate-500">{{ t('admin.checkpoints.freeCropHint') }}</p>

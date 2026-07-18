@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
 import { subscribeToPhotos, subscribeToAudioRecordings, resetTeamDay2, activateDay2 } from '@/firebase/firestore'
 import { ref as storageRef, getBlob } from 'firebase/storage'
@@ -8,7 +9,9 @@ import { storage } from '@/firebase/config'
 import JSZip from 'jszip'
 
 const { t } = useI18n()
+const route = useRoute()
 const admin = useAdminStore()
+const gid   = () => route.params.gameId
 
 const photos = ref([])
 const lightbox = ref(null)
@@ -76,8 +79,8 @@ const downloadAllPhotos = async () => {
 }
 
 onMounted(() => {
-  photosUnsubscribe    = subscribeToPhotos((list) => { photos.value = list })
-  recordingsUnsubscribe = subscribeToAudioRecordings((list) => { recordings.value = list })
+  photosUnsubscribe    = subscribeToPhotos(gid(), (list) => { photos.value = list })
+  recordingsUnsubscribe = subscribeToAudioRecordings(gid(), (list) => { recordings.value = list })
 })
 onUnmounted(() => {
   photosUnsubscribe?.()
@@ -175,7 +178,7 @@ const handleActivateDay2 = async () => {
   activatingDay2.value = true
   activateDay2Error.value = ''
   try {
-    await activateDay2()
+    await activateDay2(gid())
   } catch (e) {
     activateDay2Error.value = e.message
   } finally {
@@ -324,7 +327,7 @@ const cancelReset = (pseudo) => { resetState.value = { ...resetState.value, [pse
 const confirmReset = async (pseudo) => {
   resetState.value = { ...resetState.value, [pseudo]: 'loading' }
   try {
-    await resetTeamDay2(pseudo)
+    await resetTeamDay2(gid(), pseudo)
     resetState.value = { ...resetState.value, [pseudo]: 'idle' }
   } catch (e) {
     console.error('resetTeamDay2 failed:', e)

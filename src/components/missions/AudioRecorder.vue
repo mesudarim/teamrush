@@ -4,11 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { uploadAudioRecording } from '@/firebase/storage'
 import { saveAudioRecord } from '@/firebase/firestore'
+import { useGameContextStore } from '@/stores/gameContext'
 import BaseMission from './BaseMission.vue'
 import { useSound } from '@/composables/useSound'
 
 const { t } = useI18n()
 const auth = useAuthStore()
+const gameCtx = useGameContextStore()
 const { playCorrect } = useSound()
 
 const props = defineProps({
@@ -183,7 +185,7 @@ const submit = async () => {
   try {
     const ext = getExtension(mimeType.value)
     const url = await uploadAudioRecording(blob, props.checkpoint.id, auth.pseudo, ext, mimeType.value)
-    await saveAudioRecord({
+    await saveAudioRecord(gameCtx.gameId, {
       teamPseudo:      auth.pseudo,
       teamName:        auth.participant?.name ?? auth.pseudo,
       checkpointId:    props.checkpoint.id,

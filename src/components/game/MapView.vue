@@ -5,8 +5,20 @@ const props = defineProps({
   checkpoint: { type: Object, required: true },
 })
 
+const TILES = {
+  street: {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '© OpenStreetMap contributors',
+  },
+  satellite: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: '© Esri, Maxar, GeoEye, Earthstar Geographics',
+  },
+}
+
 const mapContainer = ref(null)
 let leafletMap = null
+let tileLayer  = null
 
 const initMap = async () => {
   if (props.checkpoint.mapType !== 'coordinates') return
@@ -15,22 +27,21 @@ const initMap = async () => {
   const L = (await import('leaflet')).default
   await import('leaflet/dist/leaflet.css')
 
-  // Fix default icon paths
   delete L.Icon.Default.prototype._getIconUrl
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+    iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+    shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   })
 
-  const lat = props.checkpoint.mapLat
-  const lng = props.checkpoint.mapLng
+  const lat  = props.checkpoint.mapLat
+  const lng  = props.checkpoint.mapLng
   const zoom = props.checkpoint.mapZoom ?? 15
+  const type = props.checkpoint.mapTileType ?? 'street'
+  const cfg  = TILES[type] ?? TILES.street
 
   leafletMap = L.map(mapContainer.value).setView([lat, lng], zoom)
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors',
-  }).addTo(leafletMap)
+  tileLayer  = L.tileLayer(cfg.url, { attribution: cfg.attribution, maxZoom: 19 }).addTo(leafletMap)
   L.marker([lat, lng]).addTo(leafletMap)
 }
 

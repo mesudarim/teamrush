@@ -4,16 +4,19 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStore } from '@/stores/game'
+import { useGameContextStore } from '@/stores/gameContext'
 import { getSettings, saveTeamPhase } from '@/firebase/firestore'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
 import LanguageToggle from '@/components/ui/LanguageToggle.vue'
 import MultipleChoice from '@/components/missions/MultipleChoice.vue'
 import TextValidation from '@/components/missions/TextValidation.vue'
+import defaultLogo from '@/assets/logoMerotz.png'
 
 const { t, locale } = useI18n()
-const router = useRouter()
-const auth = useAuthStore()
-const game = useGameStore()
+const router  = useRouter()
+const auth    = useAuthStore()
+const game    = useGameStore()
+const gameCtx = useGameContextStore()
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const settings   = ref({})
@@ -28,18 +31,23 @@ const missionKey = ref(0)
 const isDay2 = computed(() => (auth.team?.day ?? 1) === 2)
 const dayKey = computed(() => isDay2.value ? '2' : '1')
 
-const missions = computed(() => settings.value?.[`preLaunchDay${dayKey.value}Missions`] ?? [])
+const missions   = computed(() => settings.value?.[`preLaunchDay${dayKey.value}Missions`] ?? [])
+const plEnabled  = computed(() => settings.value?.[`preLaunchDay${dayKey.value}Enabled`] ?? true)
+const showIntro  = computed(() => plEnabled.value && (settings.value?.[`preLaunchDay${dayKey.value}ShowIntro`] ?? true))
+const showVideo  = computed(() => plEnabled.value && (settings.value?.[`preLaunchDay${dayKey.value}ShowVideo`] ?? false))
+const showOutro  = computed(() => plEnabled.value && (settings.value?.[`preLaunchDay${dayKey.value}ShowOutro`] ?? true))
+const plVideoUrl = computed(() => settings.value?.[`preLaunchDay${dayKey.value}VideoUrl`] ?? '')
 
 const loc = (he, en) => (locale.value === 'en' && en) ? en : (he || '')
 
-const introText = computed(() => loc(
+const introText = computed(() => showIntro.value ? loc(
   settings.value?.[`preLaunchDay${dayKey.value}Intro`],
   settings.value?.[`preLaunchDay${dayKey.value}IntroEn`],
-))
-const outroText = computed(() => loc(
+) : '')
+const outroText = computed(() => showOutro.value ? loc(
   settings.value?.[`preLaunchDay${dayKey.value}Outro`],
   settings.value?.[`preLaunchDay${dayKey.value}OutroEn`],
-))
+) : '')
 
 const currentMission = computed(() => missions.value[missionIdx.value] ?? null)
 
@@ -72,7 +80,14 @@ onMounted(async () => {
   if (passed) {
     try { settings.value = JSON.parse(passed) } catch {}
   } else {
-    settings.value = await getSettings()
+    settings.value = await getSettings(gameCtx.gameId)
+  }
+
+  // Pre-launch entirely disabled → auto-complete and go to game
+  if (!plEnabled.value) {
+    await game.completePreLaunch()
+    router.replace({ name: 'Game', params: { gameId: gameCtx.gameId } })
+    return
   }
 
   // Restore position if player was already in pre-launch
@@ -82,9 +97,13 @@ onMounted(async () => {
     missionIdx.value = Math.min(savedIdx, Math.max(0, missions.value.length - 1))
     stage.value = 'missions'
   } else if (!introText.value) {
-    // No intro text → skip straight to missions
-    stage.value = missions.value.length > 0 ? 'missions' : 'outro'
-    if (stage.value === 'missions') persist(0)
+    // No intro text → skip to video or missions
+    if (showVideo.value && plVideoUrl.value) {
+      stage.value = 'video'
+    } else {
+      stage.value = missions.value.length > 0 ? 'missions' : 'outro'
+      if (stage.value === 'missions') persist(0)
+    }
   }
 
   loading.value = false
@@ -92,10 +111,26 @@ onMounted(async () => {
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 const persist = (idx) => {
-  if (auth.pseudo) saveTeamPhase(auth.pseudo, 'preLaunch', idx).catch(() => {})
+  if (auth.pseudo) saveTeamPhase(gameCtx.gameId, auth.pseudo, 'preLaunch', idx).catch(() => {})
 }
 
 const scrollTop = () => window.scrollTo({ top: 0 })
+
+// Called after intro text → go to video if enabled, else missions/outro
+const afterIntro = () => {
+  if (showVideo.value && plVideoUrl.value) {
+    stage.value = 'video'
+  } else {
+    startMissions()
+  }
+  scrollTop()
+}
+
+// Called after video → go to missions/outro
+const afterVideo = () => {
+  startMissions()
+  scrollTop()
+}
 
 const startMissions = () => {
   if (missions.value.length === 0) {
@@ -139,7 +174,7 @@ const advanceMission = () => {
 
 const launchGame = async () => {
   await game.completePreLaunch()
-  router.push({ name: 'Game' })
+  router.push({ name: 'Game', params: { gameId: gameCtx.gameId } })
 }
 </script>
 
@@ -150,9 +185,9 @@ const launchGame = async () => {
     <div class="flex justify-between items-center px-6 py-4 border-b border-slate-800">
       <div class="flex items-center gap-2">
         <div class="w-10 h-10 rounded-full overflow-hidden shrink-0">
-          <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-cover" />
+          <img :src="gameCtx.logoUrl || defaultLogo" alt="logo" class="w-full h-full object-cover" />
         </div>
-        <span class="font-bold text-amber-400 text-base hidden sm:block">{{ t('app.name') }}</span>
+        <span class="font-bold text-amber-400 text-base hidden sm:block">{{ (locale === 'en' ? gameCtx.appTitleEn : gameCtx.appTitle) || gameCtx.gameName || t('app.name') }}</span>
       </div>
       <div class="flex items-center gap-2">
         <span class="text-sm text-slate-400">{{ auth.team?.displayName || auth.pseudo }}</span>
@@ -195,10 +230,31 @@ const launchGame = async () => {
               {{ introText }}
             </div>
 
-            <button @click="startMissions" class="btn-primary w-full py-4 text-lg font-bold">
+            <button @click="afterIntro" class="btn-primary w-full py-4 text-lg font-bold">
               {{ t('preLaunch.startBtn') }}
             </button>
           </div>
+        </div>
+      </Transition>
+
+      <!-- ── VIDEO STAGE ── -->
+      <Transition name="slide-up" mode="out-in">
+        <div v-if="stage === 'video'" key="video"
+             class="flex-1 flex flex-col items-center justify-center p-6 space-y-6">
+          <div class="w-full max-w-lg">
+            <div class="aspect-video rounded-2xl overflow-hidden bg-black shadow-2xl">
+              <iframe
+                :src="plVideoUrl.replace('watch?v=', 'embed/').replace('shorts/', 'embed/')"
+                class="w-full h-full"
+                frameborder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen
+              />
+            </div>
+          </div>
+          <button @click="afterVideo" class="btn-primary px-10 py-4 text-lg font-bold">
+            {{ locale === 'en' ? 'Continue' : 'המשך' }}
+          </button>
         </div>
       </Transition>
 

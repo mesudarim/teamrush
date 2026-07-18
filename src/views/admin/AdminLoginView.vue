@@ -1,25 +1,37 @@
-﻿<script setup>
+<script setup>
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAdminAuthStore } from '@/stores/adminAuth'
 
-const { t } = useI18n()
-const router = useRouter()
+const props = defineProps({
+  superAdmin: { type: Boolean, default: false },
+})
+
+const { t }     = useI18n()
+const route     = useRoute()
+const router    = useRouter()
 const adminAuth = useAdminAuthStore()
-const loading = ref(false)
+const loading   = ref(false)
+
+const gameId = route.params.gameId ?? ''
 
 const signIn = async () => {
   loading.value = true
-  const ok = await adminAuth.login()
-  if (ok) router.push('/admin/tracks')
+  const ok = await adminAuth.login(props.superAdmin ? null : gameId)
+  if (ok) {
+    if (props.superAdmin) {
+      router.push('/superadmin')
+    } else {
+      router.push(`/g/${gameId}/admin/tracks`)
+    }
+  }
   loading.value = false
 }
 </script>
 
 <template>
   <div class="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
-
     <div class="w-full max-w-sm space-y-8 animate-fade-in">
 
       <!-- Logo -->
@@ -28,7 +40,9 @@ const signIn = async () => {
           <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-cover" />
         </div>
         <h1 class="text-2xl font-black text-white">{{ t('app.name') }}</h1>
-        <p class="text-slate-400 text-sm mt-1">{{ t('admin.adminLogin.subtitle') }}</p>
+        <p class="text-slate-400 text-sm mt-1">
+          {{ superAdmin ? 'Superadmin' : t('admin.adminLogin.subtitle') }}
+        </p>
       </div>
 
       <!-- Card -->
@@ -38,13 +52,11 @@ const signIn = async () => {
           <p class="text-slate-400 text-sm">{{ t('admin.adminLogin.cardSubtitle') }}</p>
         </div>
 
-        <!-- Google button -->
         <button
           @click="signIn"
           :disabled="loading"
           class="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl border-2 border-slate-600 bg-slate-700 hover:border-slate-400 hover:bg-slate-600 transition-all font-semibold text-white disabled:opacity-50"
         >
-          <!-- Google logo SVG -->
           <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -54,15 +66,16 @@ const signIn = async () => {
           <span>{{ loading ? t('admin.adminLogin.signingIn') : t('admin.adminLogin.signIn') }}</span>
         </button>
 
-        <!-- Error -->
         <p v-if="adminAuth.error" class="text-red-400 text-sm text-center">
           {{ adminAuth.error }}
         </p>
       </div>
 
-      <!-- Back -->
       <p class="text-center">
-        <RouterLink to="/" class="text-xs text-slate-600 hover:text-slate-400 transition-colors">
+        <RouterLink
+          :to="gameId ? `/g/${gameId}` : '/'"
+          class="text-xs text-slate-600 hover:text-slate-400 transition-colors"
+        >
           {{ t('admin.adminLogin.backToGame') }}
         </RouterLink>
       </p>

@@ -18,6 +18,7 @@ const missionRegistry = {
   MissingWord:     defineAsyncComponent(() => import('@/components/missions/MissingWord.vue')),
   HarpMission:     defineAsyncComponent(() => import('@/components/missions/HarpMission.vue')),
   QrScanMission:   defineAsyncComponent(() => import('@/components/missions/QrScanMission.vue')),
+  MultiSelect:     defineAsyncComponent(() => import('@/components/missions/MultiSelect.vue')),
 }
 
 const currentQuestion = computed(() => game.currentQuestion)

@@ -1,16 +1,19 @@
-﻿<script setup>
+<script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useGameContextStore } from '@/stores/gameContext'
 import { getSettings } from '@/firebase/firestore'
 import LanguageToggle from '@/components/ui/LanguageToggle.vue'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
+import defaultLogo from '@/assets/logoMerotz.png'
 
 const { t, locale } = useI18n()
-const router = useRouter()
-const route  = useRoute()
-const auth   = useAuthStore()
+const router  = useRouter()
+const route   = useRoute()
+const auth    = useAuthStore()
+const gameCtx = useGameContextStore()
 
 const isDay2   = computed(() => route.name === 'LoginDay2')
 const dayLabel = computed(() => isDay2.value
@@ -18,15 +21,18 @@ const dayLabel = computed(() => isDay2.value
   : (locale.value === 'en' ? 'Day 1' : 'יום 1')
 )
 
-const identifier = ref('')
+const identifier = ref('')  // used for list mode (phone)
+const pseudo     = ref('')  // used for open mode
 const formError  = ref('')
 const settings   = ref({})
 
+const isOpenMode = computed(() => settings.value.registrationMode === 'open')
+
+// List mode: phone digits only
 const onPhoneInput = (e) => {
   const raw    = e.target.value
   const digits = raw.replace(/\D/g, '')
   identifier.value = digits
-  // Show warning only when a non-digit was actually typed
   if (digits.length < raw.length) {
     formError.value = t('login.errors.digitsOnly')
   } else if (formError.value === t('login.errors.digitsOnly')) {
@@ -35,16 +41,20 @@ const onPhoneInput = (e) => {
 }
 
 onMounted(async () => {
-  settings.value = await getSettings()
+  settings.value = await getSettings(gameCtx.gameId)
 })
 
-const submit = async () => {
+const goToGame = () => {
+  router.push({ name: 'Intro', params: { gameId: gameCtx.gameId }, state: { settings: JSON.stringify(settings.value) } })
+}
+
+// List mode submit
+const submitList = async () => {
   formError.value = ''
   if (!identifier.value.trim()) { formError.value = t('login.errors.emptyIdentifier'); return }
-
   const ok = await auth.login(identifier.value.trim(), '', isDay2.value ? 2 : 1)
   if (ok) {
-    router.push({ name: 'Intro', state: { settings: JSON.stringify(settings.value) } })
+    goToGame()
   } else if (auth.error === 'NOT_ON_LIST') {
     formError.value = t('login.notOnList')
   } else if (auth.error === 'DAY1_ALREADY_FINISHED') {
@@ -55,6 +65,27 @@ const submit = async () => {
     formError.value = auth.error
   }
 }
+
+// Open mode submit
+const submitOpen = async () => {
+  formError.value = ''
+  if (!pseudo.value.trim()) { formError.value = t('login.errors.emptyPseudo'); return }
+  if (pseudo.value.trim().length < 2) { formError.value = t('login.errors.pseudoTooShort'); return }
+  const ok = await auth.loginOpen(pseudo.value, isDay2.value ? 2 : 1)
+  if (ok) {
+    goToGame()
+  } else if (auth.error === 'INVALID_PSEUDO') {
+    formError.value = t('login.errors.invalidPseudo')
+  } else if (auth.error === 'DAY1_ALREADY_FINISHED') {
+    formError.value = t('login.errors.day1AlreadyFinished')
+  } else if (auth.error === 'DAY2_ALREADY_FINISHED') {
+    formError.value = t('login.errors.day2AlreadyFinished')
+  } else {
+    formError.value = auth.error
+  }
+}
+
+const submit = () => isOpenMode.value ? submitOpen() : submitList()
 </script>
 
 <template>
@@ -62,10 +93,12 @@ const submit = async () => {
     <!-- Header -->
     <div class="flex justify-between items-center px-6 py-4">
       <div class="flex items-center gap-2">
-        <div class="w-10 h-10 rounded-full overflow-hidden shrink-0">
-          <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-cover" />
+        <div class="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-slate-800 flex items-center justify-center">
+          <img :src="gameCtx.logoUrl || defaultLogo" alt="logo" class="w-full h-full object-contain p-0.5" />
         </div>
-        <span class="font-bold text-amber-400 text-xl" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ t('app.name') }}</span>
+        <span class="font-bold text-amber-400 text-xl" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
+          {{ (locale === 'en' ? gameCtx.appTitleEn : gameCtx.appTitle) || gameCtx.gameName || t('app.name') }}
+        </span>
       </div>
       <LanguageToggle />
     </div>
@@ -73,11 +106,11 @@ const submit = async () => {
     <!-- Hero -->
     <div class="flex-1 flex flex-col items-center justify-center px-4 py-8">
       <div class="mb-8 text-center animate-fade-in">
-        <!-- ISA logo -->
-        <img src="@/assets/Logo_israel_securities_authority.png"
-             alt="Israel Securities Authority"
+        <img v-if="gameCtx.logoUrl"
+             :src="gameCtx.logoUrl"
+             alt="logo"
              class="mx-auto mb-5"
-             style="max-width: 220px; height: auto;" />
+             style="max-width: 180px; max-height: 120px; object-fit: contain;" />
         <h1 class="text-3xl font-bold text-white"
             style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
           {{ t('login.title') }}
@@ -95,22 +128,43 @@ const submit = async () => {
       <div class="w-full max-w-sm animate-slide-up">
         <div class="card-glow space-y-5">
 
-          <!-- Identifier input -->
-          <div>
-            <label class="block text-sm font-semibold text-slate-300 mb-2">{{ t('login.identifierLabel') }}</label>
-            <input
-              :value="identifier"
-              @input="onPhoneInput"
-              @keyup.enter="submit"
-              type="tel"
-              inputmode="numeric"
-              pattern="[0-9]*"
-              class="input-field text-lg font-semibold"
-              :placeholder="t('login.identifierPlaceholder')"
-              maxlength="15"
-              autocomplete="tel"
-            />
-          </div>
+          <!-- ── Open mode: pseudo libre ── -->
+          <template v-if="isOpenMode">
+            <div>
+              <label class="block text-sm font-semibold text-slate-300 mb-2">
+                {{ t('login.openPseudoLabel') }}
+              </label>
+              <input
+                v-model="pseudo"
+                @keyup.enter="submit"
+                type="text"
+                class="input-field text-lg font-semibold"
+                :placeholder="t('login.openPseudoPlaceholder')"
+                maxlength="40"
+                autocomplete="off"
+              />
+              <p class="text-xs text-slate-500 mt-1.5">{{ t('login.openPseudoHint') }}</p>
+            </div>
+          </template>
+
+          <!-- ── List mode: identifiant (téléphone) ── -->
+          <template v-else>
+            <div>
+              <label class="block text-sm font-semibold text-slate-300 mb-2">{{ t('login.identifierLabel') }}</label>
+              <input
+                :value="identifier"
+                @input="onPhoneInput"
+                @keyup.enter="submit"
+                type="tel"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                class="input-field text-lg font-semibold"
+                :placeholder="t('login.identifierPlaceholder')"
+                maxlength="15"
+                autocomplete="tel"
+              />
+            </div>
+          </template>
 
           <!-- Error -->
           <Transition name="slide-down">
@@ -131,13 +185,18 @@ const submit = async () => {
             <span v-if="auth.isLoading" class="flex items-center justify-center gap-2">
               <LoadingSpinner size="sm" /> {{ t('login.loading') }}
             </span>
-            <span v-else>{{ t('login.submit') }}</span>
+            <span v-else>{{ t(isOpenMode ? 'login.joinBtn' : 'login.submit') }}</span>
           </button>
         </div>
 
         <!-- Admin link -->
         <div class="text-center mt-4">
-          <RouterLink to="/admin" class="text-xs text-slate-600 hover:text-slate-400 transition-colors">Admin</RouterLink>
+          <RouterLink
+            :to="`/g/${gameCtx.gameId}/admin`"
+            class="text-xs text-slate-600 hover:text-slate-400 transition-colors"
+          >
+            Admin
+          </RouterLink>
         </div>
       </div>
     </div>

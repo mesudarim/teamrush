@@ -1,12 +1,15 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { createParticipant, bulkCreateParticipants, deleteParticipant, subscribeToParticipants } from '@/firebase/firestore'
 import { useAdminStore } from '@/stores/admin'
 import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 
 const { t } = useI18n()
+const route = useRoute()
 const admin = useAdminStore()
+const gid   = () => route.params.gameId
 
 const participants = ref([])
 const search = ref('')
@@ -23,7 +26,7 @@ const form = ref({ name: '', email: '', phone: '' })
 let unsubscribe = null
 
 onMounted(() => {
-  unsubscribe = subscribeToParticipants((data) => { participants.value = data })
+  unsubscribe = subscribeToParticipants(gid(), (data) => { participants.value = data })
 })
 onUnmounted(() => unsubscribe?.())
 
@@ -96,7 +99,7 @@ const addOne = async () => {
   if (!form.value.name.trim()) return
   saving.value = true
   try {
-    await createParticipant(form.value)
+    await createParticipant(gid(), form.value)
     form.value = { name: '', email: '', phone: '' }
     showAddForm.value = false
   } finally {
@@ -121,7 +124,7 @@ const importBulk = async () => {
   if (!list.length) return
   bulkSaving.value = true
   try {
-    await bulkCreateParticipants(list)
+    await bulkCreateParticipants(gid(), list)
     bulkResult.value = t('admin.participants.importSuccess', { n: list.length })
     bulkText.value = ''
     setTimeout(() => { bulkResult.value = null; showBulkForm.value = false }, 2500)
@@ -132,13 +135,13 @@ const importBulk = async () => {
 
 const confirmDelete = async () => {
   if (!confirmDeleteId.value) return
-  await deleteParticipant(confirmDeleteId.value)
+  await deleteParticipant(gid(), confirmDeleteId.value)
   confirmDeleteId.value = null
 }
 
 const deleteAll = async () => {
   if (!confirm(t('admin.participants.deleteAllConfirm', { n: participants.value.length }))) return
-  for (const p of participants.value) await deleteParticipant(p.id)
+  for (const p of participants.value) await deleteParticipant(gid(), p.id)
 }
 </script>
 

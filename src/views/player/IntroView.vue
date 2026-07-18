@@ -3,13 +3,16 @@ import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { getSettings } from '@/firebase/firestore'
+import { useGameContextStore } from '@/stores/gameContext'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
 import LanguageToggle from '@/components/ui/LanguageToggle.vue'
 import { useAuthStore } from '@/stores/auth'
+import defaultLogo from '@/assets/logoMerotz.png'
 
-const { t } = useI18n()
-const router = useRouter()
-const auth = useAuthStore()
+const { t, locale } = useI18n()
+const router  = useRouter()
+const auth    = useAuthStore()
+const gameCtx = useGameContextStore()
 
 const settings = ref({})
 const loading = ref(true)
@@ -33,7 +36,7 @@ onMounted(async () => {
     try { settings.value = JSON.parse(passed) } catch {}
     loading.value = false
   } else {
-    settings.value = await getSettings()
+    settings.value = await getSettings(gameCtx.gameId)
     loading.value = false
   }
 })
@@ -58,9 +61,9 @@ const proceed = () => {
     <div class="flex justify-between items-center px-6 py-4">
       <div class="flex items-center gap-2">
         <div class="w-10 h-10 rounded-full overflow-hidden shrink-0">
-          <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-cover" />
+          <img :src="gameCtx.logoUrl || defaultLogo" alt="logo" class="w-full h-full object-cover" />
         </div>
-        <span class="font-bold text-amber-400 text-xl hidden sm:block" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ t('app.name') }}</span>
+        <span class="font-bold text-amber-400 text-xl hidden sm:block" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">{{ (locale === 'en' ? gameCtx.appTitleEn : gameCtx.appTitle) || gameCtx.gameName || t('app.name') }}</span>
       </div>
       <div class="flex items-center gap-2">
         <span class="text-sm text-slate-400">{{ auth.team?.displayName || auth.pseudo }}</span>

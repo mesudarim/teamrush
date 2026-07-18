@@ -1,12 +1,15 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
 import { getCheckpoints, getParticipants, assignRoutesToParticipants, activateDay2, activateDay1, getSettings, updateSettings } from '@/firebase/firestore'
 import { generateRoutes } from '@/utils/routeGenerator'
 
 const { t } = useI18n()
+const route = useRoute()
 const admin = useAdminStore()
+const gid   = () => route.params.gameId
 
 // ── State ──────────────────────────────────────────────────────────────────────
 const checkpoints            = ref([])
@@ -33,9 +36,9 @@ onMounted(async () => {
   isLoading.value = true
   try {
     const [cps, parts, settings] = await Promise.all([
-      getCheckpoints(),
-      getParticipants(),
-      getSettings(),
+      getCheckpoints(gid()),
+      getParticipants(gid()),
+      getSettings(gid()),
     ])
     checkpoints.value  = cps
     participants.value = parts
@@ -55,7 +58,7 @@ onMounted(async () => {
 })
 
 const saveFinalCheckpoint = async () => {
-  await updateSettings({
+  await updateSettings(gid(), {
     finalCheckpointDay1Id: finalCheckpointDay1Id.value,
     finalCheckpointDay2Id: finalCheckpointDay2Id.value,
   })
@@ -147,7 +150,7 @@ async function generateAndAssign() {
       day1Order: routes[i].day1Order,
       day2Order: routes[i].day2Order,
     }))
-    await assignRoutesToParticipants(assignments)
+    await assignRoutesToParticipants(gid(), assignments)
 
     assignments.forEach(a => {
       const p = participants.value.find(x => x.id === a.participantId)
@@ -169,8 +172,8 @@ async function handleActivateDay2() {
   successMsg.value = ''
   isActivating.value = true
   try {
-    await activateDay2()
-    participants.value = await getParticipants()
+    await activateDay2(gid())
+    participants.value = await getParticipants(gid())
     buildRoutesFromParticipants()
     successMsg.value = t('admin.routes.successDay2')
   } catch (e) {
@@ -186,8 +189,8 @@ async function handleActivateDay1() {
   successMsg.value = ''
   isActivating.value = true
   try {
-    await activateDay1()
-    participants.value = await getParticipants()
+    await activateDay1(gid())
+    participants.value = await getParticipants(gid())
     buildRoutesFromParticipants()
     successMsg.value = t('admin.routes.successDay1')
   } catch (e) {

@@ -4,14 +4,17 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useGameStore } from '@/stores/game'
+import { useGameContextStore } from '@/stores/gameContext'
 import LanguageToggle from '@/components/ui/LanguageToggle.vue'
 import TutorialOverlay from '@/components/ui/TutorialOverlay.vue'
 import { useTutorial } from '@/composables/useTutorial'
+import defaultLogo from '@/assets/logoMerotz.png'
 
 const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const game = useGameStore()
+const gameCtx = useGameContextStore()
 
 const showMenu        = ref(false)
 const showExitModal   = ref(false)
@@ -71,7 +74,7 @@ const confirmExit = async () => {
 
       <!-- Logo -->
       <div class="w-10 h-10 shrink-0">
-        <img src="@/assets/logoMerotz.png" alt="logo" class="w-full h-full object-contain" />
+        <img :src="gameCtx.logoUrl || defaultLogo" alt="logo" class="w-full h-full object-contain" />
       </div>
 
     </div>

@@ -1,16 +1,65 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
-import { cleanOrphanTeams, getAdminEmails, saveAdminEmails } from '@/firebase/firestore'
+import { cleanOrphanTeams, getAdminEmails, saveAdminEmails, getCheckpoints } from '@/firebase/firestore'
+import { uploadGameLogo } from '@/firebase/storage'
 import QrCodeDisplay from '@/components/ui/QrCodeDisplay.vue'
 
 const { t } = useI18n()
+const route = useRoute()
 const admin = useAdminStore()
+const gid   = () => route.params.gameId
 
-const form = ref({ eventName: '', introVideoUrl: '', introVideoUrlDay2: '', timeBonusMax: 100, timeBonusPar: 90, isEventLive: false, tapiskeyword: '', tapiskeywordEn: '', tapisInstruction: '', tapisInstructionEn: '', tapisVideoUrl: '', tapiskeywordDay2: '', tapiskeywordEnDay2: '', tapisInstructionDay2: '', tapisInstructionEnDay2: '', tapisVideoUrlDay2: '', tapisManualEntry: false, preLaunchDay1Intro: '', preLaunchDay1IntroEn: '', preLaunchDay1Outro: '', preLaunchDay1OutroEn: '', preLaunchDay1Missions: [], preLaunchDay2Intro: '', preLaunchDay2IntroEn: '', preLaunchDay2Outro: '', preLaunchDay2OutroEn: '', preLaunchDay2Missions: [] })
+// ── Branding ──────────────────────────────────────────────────────────────────
+const logoFile    = ref(null)   // File object if new logo selected
+const logoPreview = ref('')     // local preview URL before upload
+
+const onLogoFile = (e) => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  logoFile.value    = file
+  logoPreview.value = URL.createObjectURL(file)
+}
+
+const normalizeOpenRouting = (r) => ({
+  zones: r?.zones ?? [],
+  paths: r?.paths ?? [],
+  finalCheckpointId: r?.finalCheckpointId ?? '',
+})
+
+const form = ref({
+  // ── Branding ────────────────────────────────────────
+  logoUrl: '', appTitle: '', appTitleEn: '',
+  // ── Structure du jeu ────────────────────────────────
+  registrationMode: 'list',
+  openModeRouting: normalizeOpenRouting(null),
+  gameDays: 1,
+  // Pre-launch Day 1
+  preLaunchDay1Enabled:   false,
+  preLaunchDay1ShowIntro: true,
+  preLaunchDay1ShowVideo: false,
+  preLaunchDay1VideoUrl:  '',
+  preLaunchDay1ShowOutro: true,
+  // Pre-launch Day 2
+  preLaunchDay2Enabled:   false,
+  preLaunchDay2ShowIntro: true,
+  preLaunchDay2ShowVideo: false,
+  preLaunchDay2VideoUrl:  '',
+  preLaunchDay2ShowOutro: true,
+  // ── Contenu ──────────────────────────────────────────
+  eventName: '', introVideoUrl: '', introVideoUrlDay2: '',
+  timeBonusMax: 100, timeBonusPar: 90, isEventLive: false,
+  tapiskeyword: '', tapiskeywordEn: '', tapisInstruction: '', tapisInstructionEn: '', tapisVideoUrl: '',
+  tapiskeywordDay2: '', tapiskeywordEnDay2: '', tapisInstructionDay2: '', tapisInstructionEnDay2: '', tapisVideoUrlDay2: '',
+  tapisManualEntry: false,
+  preLaunchDay1Intro: '', preLaunchDay1IntroEn: '', preLaunchDay1Outro: '', preLaunchDay1OutroEn: '', preLaunchDay1Missions: [],
+  preLaunchDay2Intro: '', preLaunchDay2IntroEn: '', preLaunchDay2Outro: '', preLaunchDay2OutroEn: '', preLaunchDay2Missions: [],
+})
 
 const preLaunchDay = ref('1')
+const availableDays = computed(() => Array.from({ length: form.value.gameDays }, (_, i) => String(i + 1)))
 
 const showTapisQr = ref({ day1: false, day2: false })
 const tapisQrValue = (day) => {
@@ -19,13 +68,14 @@ const tapisQrValue = (day) => {
 }
 
 const copiedUrl = ref('')
-const playerUrls = [
-  { label: 'Jour 1', url: 'https://teamrush.web.app/' },
-  { label: 'Jour 2', url: 'https://teamrush.web.app/day2' },
-  { label: 'Résultats J1', url: 'https://teamrush.web.app/resultats' },
-  { label: 'Résultats J2', url: 'https://teamrush.web.app/resultats/jour2' },
-  { label: 'Résultats Total', url: 'https://teamrush.web.app/resultats/total' },
-]
+const base = computed(() => `${window.location.origin}/g/${gid()}`)
+const playerUrls = computed(() => [
+  { label: 'Jour 1',          url: `${base.value}` },
+  { label: 'Jour 2',          url: `${base.value}/day2` },
+  { label: 'Résultats J1',    url: `${base.value}/resultats` },
+  { label: 'Résultats J2',    url: `${base.value}/resultats/jour2` },
+  { label: 'Résultats Total', url: `${base.value}/resultats/total` },
+])
 const copyUrl = (url) => {
   navigator.clipboard.writeText(url).then(() => {
     copiedUrl.value = url
@@ -61,6 +111,42 @@ const saved = ref(false)
 const saving = ref(false)
 const confirmReset = ref(false)
 
+// ── Open Mode Routing ─────────────────────────────────────────────────────────
+const allCheckpoints = ref([])
+
+const addZone = () => {
+  form.value.openModeRouting.zones.push({ id: 'z_' + Date.now(), name: '', checkpointIds: [], pickCount: 1 })
+}
+const removeZone = (zi) => {
+  const zoneId = form.value.openModeRouting.zones[zi].id
+  form.value.openModeRouting.zones.splice(zi, 1)
+  for (const path of form.value.openModeRouting.paths) {
+    path.zoneOrder = path.zoneOrder.filter(id => id !== zoneId)
+  }
+}
+const toggleZoneCheckpoint = (zone, cpId) => {
+  const idx = zone.checkpointIds.indexOf(cpId)
+  if (idx === -1) zone.checkpointIds.push(cpId)
+  else zone.checkpointIds.splice(idx, 1)
+}
+const addPath = () => {
+  form.value.openModeRouting.paths.push({ id: 'p_' + Date.now(), name: '', zoneOrder: [] })
+}
+const removePath = (pi) => { form.value.openModeRouting.paths.splice(pi, 1) }
+const moveZoneInPath = (path, zIdx, dir) => {
+  const j = zIdx + dir
+  if (j < 0 || j >= path.zoneOrder.length) return
+  ;[path.zoneOrder[zIdx], path.zoneOrder[j]] = [path.zoneOrder[j], path.zoneOrder[zIdx]]
+}
+const addZoneToPath  = (path, zoneId) => { if (!path.zoneOrder.includes(zoneId)) path.zoneOrder.push(zoneId) }
+const removeZoneFromPath = (path, idx) => { path.zoneOrder.splice(idx, 1) }
+
+const openRoutingTotal = computed(() => {
+  const r = form.value.openModeRouting
+  const fromZones = r.zones.reduce((s, z) => s + (z.pickCount || 0), 0)
+  return fromZones + (r.finalCheckpointId ? 1 : 0)
+})
+
 // ── Admin Emails ──────────────────────────────────────────────────────────────
 const adminEmails = ref([])
 const adminEmailsLoaded = ref(false)
@@ -74,17 +160,24 @@ const cleanMsg = ref('')
 
 onMounted(async () => {
   form.value = { ...form.value, ...admin.settings }
-  adminEmails.value = await getAdminEmails()
+  form.value.openModeRouting = normalizeOpenRouting(admin.settings?.openModeRouting)
+  adminEmails.value = await getAdminEmails(gid())
   adminEmailsLoaded.value = true
+  allCheckpoints.value = await getCheckpoints(gid())
 })
 
 watch(() => admin.settings, (s) => {
   form.value = { ...form.value, ...s }
+  form.value.openModeRouting = normalizeOpenRouting(s?.openModeRouting)
 }, { deep: true })
 
 const save = async () => {
   saving.value = true
   try {
+    if (logoFile.value) {
+      form.value.logoUrl = await uploadGameLogo(gid(), logoFile.value)
+      logoFile.value = null
+    }
     await admin.saveSettings({ ...form.value })
     saved.value = true
     setTimeout(() => { saved.value = false }, 2500)
@@ -97,7 +190,7 @@ const doCleanOrphans = async () => {
   cleaning.value = true
   cleanMsg.value = ''
   try {
-    const n = await cleanOrphanTeams()
+    const n = await cleanOrphanTeams(gid())
     cleanMsg.value = n > 0
       ? t('admin.settings.cleanOrphansDone', { n })
       : t('admin.settings.cleanOrphansNone')
@@ -121,7 +214,7 @@ const removeAdminEmail = (i) => {
 const saveAdminEmailsList = async () => {
   adminEmailsSaving.value = true
   try {
-    await saveAdminEmails(adminEmails.value)
+    await saveAdminEmails(gid(), adminEmails.value)
     adminEmailsSaved.value = true
     setTimeout(() => { adminEmailsSaved.value = false }, 2500)
   } finally {
@@ -145,6 +238,392 @@ const doResetAll = async () => {
 <template>
   <div class="max-w-4xl">
     <h2 class="section-title mb-6">{{ t('admin.settings.title') }}</h2>
+
+    <!-- ══ Branding ══════════════════════════════════════════════════════════ -->
+    <div class="card mb-6 space-y-5">
+      <h3 class="text-sm font-black text-amber-400 uppercase tracking-wider">{{ t('admin.settings.brandingTitle') }}</h3>
+
+      <!-- Logo -->
+      <div class="flex items-start gap-5">
+        <!-- Preview -->
+        <div class="w-20 h-20 rounded-xl border-2 border-slate-600 bg-slate-900/60 flex items-center justify-center overflow-hidden shrink-0">
+          <img v-if="logoPreview || form.logoUrl"
+               :src="logoPreview || form.logoUrl"
+               alt="logo"
+               class="w-full h-full object-contain p-1" />
+          <svg v-else class="w-8 h-8 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+          </svg>
+        </div>
+        <div class="flex-1 space-y-2">
+          <label class="block text-sm font-semibold text-slate-300">{{ t('admin.settings.brandingLogoLabel') }}</label>
+          <label class="inline-flex items-center gap-2 btn-secondary text-sm py-2 px-4 cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+            {{ form.logoUrl ? t('admin.settings.brandingLogoChange') : t('admin.settings.brandingLogoUpload') }}
+            <input type="file" accept="image/*" class="hidden" @change="onLogoFile" />
+          </label>
+          <p class="text-xs text-slate-500">{{ t('admin.settings.brandingLogoHint') }}</p>
+        </div>
+      </div>
+
+      <!-- App title -->
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.settings.brandingAppTitle') }}</label>
+          <input v-model="form.appTitle" class="input-field" />
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.settings.brandingAppTitleEn') }}</label>
+          <input v-model="form.appTitleEn" class="input-field" />
+        </div>
+      </div>
+      <p class="text-xs text-slate-500">{{ t('admin.settings.brandingAppTitleHint') }}</p>
+    </div>
+
+    <!-- ══ Structure du jeu ══════════════════════════════════════════════════ -->
+    <div class="card-glow space-y-6 mb-6">
+      <h3 class="text-sm font-bold text-white">🗓 Structure du jeu</h3>
+
+      <!-- Nombre de jours -->
+      <div class="space-y-2">
+        <label class="block text-sm font-semibold text-slate-300">Nombre de jours</label>
+        <div class="flex gap-2 flex-wrap">
+          <button
+            v-for="n in [1, 2]"
+            :key="n"
+            type="button"
+            @click="form.gameDays = n"
+            :class="['px-5 py-2 rounded-xl border-2 text-sm font-semibold transition-colors',
+              form.gameDays === n
+                ? 'border-amber-500 bg-amber-500/10 text-amber-400'
+                : 'border-slate-600 bg-slate-700 text-slate-400 hover:border-slate-500']"
+          >
+            {{ n }} jour{{ n > 1 ? 's' : '' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Séparateur -->
+      <div class="border-t border-slate-700" />
+
+      <!-- Pré-lancement -->
+      <div class="space-y-4">
+        <label class="block text-sm font-semibold text-slate-300">Pré-lancement <span class="text-xs text-slate-500 font-normal">(avant le premier checkpoint)</span></label>
+
+        <!-- Onglets jours -->
+        <div class="flex gap-2">
+          <button
+            v-for="d in availableDays"
+            :key="d"
+            type="button"
+            @click="preLaunchDay = d"
+            :class="['px-4 py-1.5 rounded-xl text-sm font-semibold border-2 transition-colors',
+              preLaunchDay === d
+                ? 'border-amber-500 bg-amber-500/10 text-amber-400'
+                : 'border-slate-600 text-slate-400 hover:text-slate-200']"
+          >
+            Jour {{ d }}
+          </button>
+        </div>
+
+        <!-- Config par jour -->
+        <template v-for="d in availableDays" :key="d">
+          <div v-show="preLaunchDay === d" class="space-y-4">
+
+            <!-- Toggle principal -->
+            <label class="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl border border-slate-700 bg-slate-900/30">
+              <input
+                type="checkbox"
+                :checked="form[`preLaunchDay${d}Enabled`]"
+                @change="form[`preLaunchDay${d}Enabled`] = $event.target.checked"
+                class="w-4 h-4 accent-amber-500 cursor-pointer"
+              />
+              <div>
+                <span class="text-sm font-semibold text-slate-200">Activer le pré-lancement pour le jour {{ d }}</span>
+                <p class="text-xs text-slate-500 mt-0.5">
+                  Les joueurs verront cette séquence avant d'accéder au premier checkpoint.
+                </p>
+              </div>
+            </label>
+
+            <!-- Éléments (visibles seulement si pré-lancement activé) -->
+            <div v-if="form[`preLaunchDay${d}Enabled`]" class="space-y-3 ps-2 border-s-2 border-amber-500/30">
+
+              <!-- ① Texte d'introduction -->
+              <div class="rounded-xl border border-slate-700 overflow-hidden">
+                <label class="flex items-center gap-3 px-4 py-3 bg-slate-800 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    :checked="form[`preLaunchDay${d}ShowIntro`]"
+                    @change="form[`preLaunchDay${d}ShowIntro`] = $event.target.checked"
+                    class="w-4 h-4 accent-amber-500 cursor-pointer"
+                  />
+                  <span class="text-sm font-semibold text-slate-200">① Texte d'introduction</span>
+                </label>
+                <div v-if="form[`preLaunchDay${d}ShowIntro`]" class="p-4 bg-slate-800/40 grid md:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Hébreu</label>
+                    <textarea
+                      v-model="form[`preLaunchDay${d}Intro`]"
+                      rows="3"
+                      class="input-field resize-none text-sm"
+                      placeholder="Texte affiché avant les missions…"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Anglais</label>
+                    <textarea
+                      v-model="form[`preLaunchDay${d}IntroEn`]"
+                      rows="3"
+                      class="input-field resize-none text-sm"
+                      placeholder="Text shown before missions…"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- ② Vidéo -->
+              <div class="rounded-xl border border-slate-700 overflow-hidden">
+                <label class="flex items-center gap-3 px-4 py-3 bg-slate-800 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    :checked="form[`preLaunchDay${d}ShowVideo`]"
+                    @change="form[`preLaunchDay${d}ShowVideo`] = $event.target.checked"
+                    class="w-4 h-4 accent-amber-500 cursor-pointer"
+                  />
+                  <span class="text-sm font-semibold text-slate-200">② Vidéo</span>
+                </label>
+                <div v-if="form[`preLaunchDay${d}ShowVideo`]" class="p-4 bg-slate-800/40">
+                  <label class="block text-xs font-semibold text-slate-400 mb-1">URL de la vidéo</label>
+                  <input
+                    v-model="form[`preLaunchDay${d}VideoUrl`]"
+                    class="input-field text-sm"
+                    placeholder="https://youtube.com/shorts/..."
+                  />
+                  <p class="text-xs text-slate-500 mt-1">YouTube Shorts, standard ou embed URL</p>
+                </div>
+              </div>
+
+              <!-- ③ Texte de clôture -->
+              <div class="rounded-xl border border-slate-700 overflow-hidden">
+                <label class="flex items-center gap-3 px-4 py-3 bg-slate-800 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    :checked="form[`preLaunchDay${d}ShowOutro`]"
+                    @change="form[`preLaunchDay${d}ShowOutro`] = $event.target.checked"
+                    class="w-4 h-4 accent-amber-500 cursor-pointer"
+                  />
+                  <span class="text-sm font-semibold text-slate-200">③ Texte de clôture</span>
+                </label>
+                <div v-if="form[`preLaunchDay${d}ShowOutro`]" class="p-4 bg-slate-800/40 grid md:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Hébreu</label>
+                    <textarea
+                      v-model="form[`preLaunchDay${d}Outro`]"
+                      rows="3"
+                      class="input-field resize-none text-sm"
+                      placeholder="Texte affiché après les missions…"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">Anglais</label>
+                    <textarea
+                      v-model="form[`preLaunchDay${d}OutroEn`]"
+                      rows="3"
+                      class="input-field resize-none text-sm"
+                      placeholder="Text shown after missions…"
+                    />
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Mode d'inscription -->
+    <div class="card-glow space-y-3 mb-6">
+      <h3 class="text-sm font-bold text-white">Mode d'inscription des joueurs</h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label
+          :class="[
+            'flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all',
+            form.registrationMode === 'list'
+              ? 'border-amber-500 bg-amber-500/10'
+              : 'border-slate-600 bg-slate-700/40 hover:border-slate-500'
+          ]"
+        >
+          <input type="radio" v-model="form.registrationMode" value="list" class="mt-0.5 accent-amber-500" />
+          <div>
+            <div class="font-semibold text-white text-sm">Liste préchargée</div>
+            <div class="text-xs text-slate-400 mt-0.5">
+              Les participants doivent être importés à l'avance. Connexion par numéro de téléphone.
+              <span class="text-amber-400 font-medium">Mode actuel du premier jeu.</span>
+            </div>
+          </div>
+        </label>
+
+        <label
+          :class="[
+            'flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all',
+            form.registrationMode === 'open'
+              ? 'border-blue-500 bg-blue-500/10'
+              : 'border-slate-600 bg-slate-700/40 hover:border-slate-500'
+          ]"
+        >
+          <input type="radio" v-model="form.registrationMode" value="open" class="mt-0.5 accent-blue-500" />
+          <div>
+            <div class="font-semibold text-white text-sm">Inscription libre</div>
+            <div class="text-xs text-slate-400 mt-0.5">
+              Chaque joueur choisit son propre pseudo. Pas de liste à préparer.
+              Le pseudo apparaît dans le classement et les résultats.
+            </div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- ══ Open Mode Routing ════════════════════════════════════════════════════ -->
+    <Transition name="saved">
+      <div v-if="form.registrationMode === 'open'" class="card-glow space-y-5 mb-6">
+        <div>
+          <h3 class="text-sm font-bold text-white">🗺 {{ t('admin.settings.openRouting.title') }}</h3>
+          <p class="text-xs text-slate-400 mt-1">{{ t('admin.settings.openRouting.desc') }}</p>
+        </div>
+
+        <!-- Final checkpoint -->
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.settings.openRouting.finalCheckpoint') }}</label>
+          <select v-model="form.openModeRouting.finalCheckpointId" class="input-field">
+            <option value="">{{ t('admin.settings.openRouting.noFinal') }}</option>
+            <option v-for="cp in allCheckpoints" :key="cp.id" :value="cp.id">
+              {{ cp.title || cp.id }}
+            </option>
+          </select>
+          <p class="text-xs text-slate-500 mt-1">{{ t('admin.settings.openRouting.finalHint') }}</p>
+        </div>
+
+        <!-- Zones -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold text-slate-200">{{ t('admin.settings.openRouting.zones') }}</span>
+            <button @click="addZone" class="btn-secondary text-xs px-3 py-1.5">+ {{ t('admin.settings.openRouting.addZone') }}</button>
+          </div>
+
+          <p v-if="!form.openModeRouting.zones.length" class="text-xs text-slate-500 italic p-3 rounded-xl border border-dashed border-slate-600 text-center">
+            {{ t('admin.settings.openRouting.noZones') }}
+          </p>
+
+          <div v-for="(zone, zi) in form.openModeRouting.zones" :key="zone.id"
+               class="p-4 rounded-xl border border-slate-600 bg-slate-800/60 space-y-3">
+            <!-- Zone header -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-amber-400 font-bold shrink-0">{{ zi + 1 }}</span>
+              <input v-model="zone.name" class="input-field input-sm flex-1 text-sm" :placeholder="t('admin.settings.openRouting.zoneName')" />
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span class="text-xs text-slate-400">{{ t('admin.settings.openRouting.pickCount') }}</span>
+                <input v-model.number="zone.pickCount" type="number" min="1" :max="Math.max(1, zone.checkpointIds.length)"
+                       class="input-field input-sm w-14 text-center text-sm font-bold" />
+              </div>
+              <button @click="removeZone(zi)" class="text-red-400 hover:text-red-300 px-1 shrink-0 text-sm">✕</button>
+            </div>
+
+            <!-- Checkpoint assignment -->
+            <div>
+              <label class="block text-xs text-slate-400 mb-2">
+                {{ t('admin.settings.openRouting.assignCheckpoints') }}
+                <span class="text-amber-400 font-semibold ms-1">{{ zone.checkpointIds.length }} {{ t('admin.settings.openRouting.selected') }}</span>
+              </label>
+              <div v-if="allCheckpoints.length" class="grid grid-cols-2 gap-1 max-h-48 overflow-y-auto pr-1">
+                <label
+                  v-for="cp in allCheckpoints.filter(c => c.id !== form.openModeRouting.finalCheckpointId)"
+                  :key="cp.id"
+                  :class="['flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors select-none',
+                    zone.checkpointIds.includes(cp.id)
+                      ? 'bg-amber-500/15 border border-amber-500/40 text-amber-300'
+                      : 'bg-slate-700/50 border border-slate-600 text-slate-400 hover:border-slate-500']"
+                >
+                  <input type="checkbox"
+                    :checked="zone.checkpointIds.includes(cp.id)"
+                    @change="toggleZoneCheckpoint(zone, cp.id)"
+                    class="w-3 h-3 accent-amber-400 shrink-0"
+                  />
+                  <span class="truncate">{{ cp.title || cp.id }}</span>
+                </label>
+              </div>
+              <p v-else class="text-xs text-slate-500 italic">{{ t('common.loading') }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Paths -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold text-slate-200">{{ t('admin.settings.openRouting.paths') }}</span>
+            <button @click="addPath" class="btn-secondary text-xs px-3 py-1.5">+ {{ t('admin.settings.openRouting.addPath') }}</button>
+          </div>
+
+          <p v-if="!form.openModeRouting.paths.length" class="text-xs text-slate-500 italic p-3 rounded-xl border border-dashed border-slate-600 text-center">
+            {{ t('admin.settings.openRouting.noPaths') }}
+          </p>
+
+          <div v-for="(path, pi) in form.openModeRouting.paths" :key="path.id"
+               class="p-4 rounded-xl border border-slate-600 bg-slate-800/60 space-y-3">
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate-500 font-bold shrink-0">#{{ pi + 1 }}</span>
+              <input v-model="path.name" class="input-field input-sm flex-1 text-sm" :placeholder="t('admin.settings.openRouting.pathName')" />
+              <button @click="removePath(pi)" class="text-red-400 hover:text-red-300 px-1 shrink-0 text-sm">✕</button>
+            </div>
+
+            <!-- Zone order in this path -->
+            <div class="space-y-1">
+              <label class="block text-xs text-slate-400 mb-1">{{ t('admin.settings.openRouting.zoneOrder') }}</label>
+
+              <div v-for="(zoneId, zIdx) in path.zoneOrder" :key="zoneId"
+                   class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700/60 border border-slate-600">
+                <span class="text-xs text-amber-400 font-bold shrink-0 w-4">{{ zIdx + 1 }}</span>
+                <span class="text-xs text-slate-200 flex-1 truncate">
+                  {{ form.openModeRouting.zones.find(z => z.id === zoneId)?.name || t('admin.settings.openRouting.unnamedZone') }}
+                </span>
+                <button @click="moveZoneInPath(path, zIdx, -1)" :disabled="zIdx === 0"
+                        class="text-slate-400 hover:text-amber-300 disabled:opacity-20 px-0.5 text-xs">▲</button>
+                <button @click="moveZoneInPath(path, zIdx, 1)" :disabled="zIdx === path.zoneOrder.length - 1"
+                        class="text-slate-400 hover:text-amber-300 disabled:opacity-20 px-0.5 text-xs">▼</button>
+                <button @click="removeZoneFromPath(path, zIdx)" class="text-red-400 hover:text-red-300 text-xs px-1">✕</button>
+              </div>
+
+              <!-- Add available zones to path -->
+              <div v-if="form.openModeRouting.zones.some(z => !path.zoneOrder.includes(z.id))"
+                   class="flex flex-wrap gap-1 pt-1">
+                <button
+                  v-for="zone in form.openModeRouting.zones.filter(z => !path.zoneOrder.includes(z.id))"
+                  :key="zone.id"
+                  @click="addZoneToPath(path, zone.id)"
+                  class="text-xs px-2 py-1 rounded-lg border border-dashed border-slate-500 text-slate-400 hover:border-amber-500/50 hover:text-amber-400 transition-colors"
+                >
+                  + {{ zone.name || t('admin.settings.openRouting.unnamedZone') }}
+                </button>
+              </div>
+              <p v-if="!path.zoneOrder.length" class="text-xs text-slate-500 italic">
+                {{ t('admin.settings.openRouting.noZonesInPath') }}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary -->
+        <div v-if="form.openModeRouting.zones.length && form.openModeRouting.paths.length"
+             class="flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-xl text-xs text-slate-300">
+          <span class="text-blue-400">ℹ</span>
+          {{ t('admin.settings.openRouting.summaryText', {
+            paths: form.openModeRouting.paths.length,
+            total: openRoutingTotal,
+          }) }}
+        </div>
+      </div>
+    </Transition>
 
     <div class="card-glow space-y-5">
       <div>

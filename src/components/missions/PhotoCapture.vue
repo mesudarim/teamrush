@@ -4,11 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { uploadPhoto } from '@/firebase/storage'
 import { savePhotoRecord } from '@/firebase/firestore'
+import { useGameContextStore } from '@/stores/gameContext'
 import BaseMission from './BaseMission.vue'
 import { useSound } from '@/composables/useSound'
 
 const { t } = useI18n()
 const { playCorrect } = useSound()
+const gameCtx = useGameContextStore()
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
@@ -75,7 +77,7 @@ const confirmPhoto = async () => {
   error.value = null
   try {
     const url = await uploadPhoto(selectedBlob.value, props.checkpoint.id, auth.pseudo)
-    await savePhotoRecord({
+    await savePhotoRecord(gameCtx.gameId, {
       teamPseudo:      auth.pseudo,
       teamName:        auth.participant?.name ?? auth.pseudo,
       checkpointId:    props.checkpoint.id,
