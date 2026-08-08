@@ -43,11 +43,10 @@ onMounted(async () => {
 
 const proceed = () => {
   const isDay2 = auth.team?.day === 2
-  const missionKey = isDay2 ? 'preLaunchDay2Missions' : 'preLaunchDay1Missions'
-  const missions = settings.value?.[missionKey] ?? []
-  // Use per-day flags: Day 1 uses preLaunchDone, Day 2 uses preLaunchDay2Done
+  const dayKey = isDay2 ? '2' : '1'
+  const plEnabled = settings.value?.[`preLaunchDay${dayKey}Enabled`] ?? true
   const done = isDay2 ? (auth.team?.preLaunchDay2Done ?? false) : (auth.team?.preLaunchDone ?? false)
-  if (missions.length > 0 && !done) {
+  if (plEnabled && !done) {
     router.push({ name: 'PreLaunch' })
   } else {
     router.push({ name: 'Game' })

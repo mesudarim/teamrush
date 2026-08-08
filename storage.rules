@@ -1,0 +1,35 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Public read for all assets (logos, maps, photos, etc.)
+    match /{allPaths=**} {
+      allow read: if true;
+    }
+
+    // Admin-only uploads (require Firebase Auth — Google sign-in)
+    match /logos/{gameId}/{fileName} {
+      allow write: if request.auth != null;
+    }
+    match /maps/{checkpointId}/{fileName} {
+      allow write: if request.auth != null;
+    }
+    match /puzzles/{checkpointId}/{fileName} {
+      allow write: if request.auth != null;
+    }
+    match /stage1/{checkpointId}/{fileName} {
+      allow write: if request.auth != null;
+    }
+    match /missing-words/{checkpointId}/{allPaths=**} {
+      allow write: if request.auth != null;
+    }
+
+    // Player uploads — no Firebase Auth (players use custom team auth)
+    match /photos/{checkpointId}/{fileName} {
+      allow write: if true;
+    }
+    match /recordings/{checkpointId}/{fileName} {
+      allow write: if true;
+    }
+  }
+}

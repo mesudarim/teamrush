@@ -24,7 +24,7 @@ export const useAuthStore = defineStore('auth', () => {
   const _gameId = () => useGameContextStore().gameId
 
   // Mode liste : login par téléphone / nom / email (liste préchargée)
-  const login = async (identifier, trackId, day = 1) => {
+  const login = async (identifier, trackId, day = 1, isVerif = false) => {
     isLoading.value = true
     error.value = null
     const gid = _gameId()
@@ -34,7 +34,7 @@ export const useAuthStore = defineStore('auth', () => {
 
       const teamPseudo = found.id
       participant.value = found
-      team.value = await createTeam(gid, teamPseudo, trackId, found.name ?? '', found, day)
+      team.value = await createTeam(gid, teamPseudo, trackId, found.name ?? '', found, day, isVerif)
 
       updateParticipant(gid, found.id, { loggedIn: true, teamId: teamPseudo, lastLoginAt: new Date() }).catch(() => {})
 
@@ -50,7 +50,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // Mode ouvert : inscription libre avec un pseudo choisi par le joueur
-  const loginOpen = async (chosenPseudo, day = 1) => {
+  const loginOpen = async (chosenPseudo, day = 1, isVerif = false) => {
     isLoading.value = true
     error.value = null
     const gid = _gameId()
@@ -58,7 +58,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!slug) { error.value = 'INVALID_PSEUDO'; isLoading.value = false; return false }
     try {
       // createTeam handles both new teams and returning players with the same pseudo
-      team.value = await createTeam(gid, slug, '', chosenPseudo.trim(), null, day)
+      team.value = await createTeam(gid, slug, '', chosenPseudo.trim(), null, day, isVerif)
       participant.value = null  // pas de participant doc en mode ouvert
       localStorage.setItem(pseudoKey(gid), slug)
       return true

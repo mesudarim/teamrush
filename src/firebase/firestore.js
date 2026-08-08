@@ -130,7 +130,7 @@ export const findParticipantByIdentifier = async (gameId, query_) => {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
-export const createTeam = async (gameId, pseudo, trackId, displayName = '', participant = null, day = 1) => {
+export const createTeam = async (gameId, pseudo, trackId, displayName = '', participant = null, day = 1, isVerif = false) => {
   const ref = gdoc(gameId, 'teams', pseudo)
   const existing = await getDoc(ref)
 
@@ -139,10 +139,12 @@ export const createTeam = async (gameId, pseudo, trackId, displayName = '', part
   if (existing.exists()) {
     const existingData = existing.data()
 
-    if (day === 1 && existingData.day1Finished) throw new Error('DAY1_ALREADY_FINISHED')
-    if (day === 2 && existingData.day === 2 && existingData.isFinished) throw new Error('DAY2_ALREADY_FINISHED')
+    if (!isVerif) {
+      if (day === 1 && existingData.day1Finished) throw new Error('DAY1_ALREADY_FINISHED')
+      if (day === 2 && existingData.day === 2 && existingData.isFinished) throw new Error('DAY2_ALREADY_FINISHED')
+    }
 
-    const updateData = { displayName, updatedAt: serverTimestamp() }
+    const updateData = { displayName, isVerif: !!isVerif, updatedAt: serverTimestamp() }
 
     if (participant?.day1Order?.length && !existingData.day1Order?.length) {
       updateData.day1Order = participant.day1Order
@@ -168,11 +170,11 @@ export const createTeam = async (gameId, pseudo, trackId, displayName = '', part
     day,
     currentCheckpointIndex: 0,
     points: 0,
-    startedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     checkpointTimes: {},
     completedCheckpoints: [],
     isFinished: false,
+    ...(isVerif ? { isVerif: true } : {}),
   }
 
   if (participant?.day1Order?.length) {
@@ -308,6 +310,7 @@ export const setPreLaunchDone = async (gameId, pseudo, day = 1) => {
     updates.day2StartedAt = serverTimestamp()
   } else {
     updates.preLaunchDone = true
+    updates.startedAt = serverTimestamp()
   }
   await updateDoc(gdoc(gameId, 'teams', pseudo), updates)
 }

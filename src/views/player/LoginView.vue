@@ -16,6 +16,7 @@ const auth    = useAuthStore()
 const gameCtx = useGameContextStore()
 
 const isDay2   = computed(() => route.name === 'LoginDay2')
+const isVerif  = computed(() => !!route.meta?.verifMode)
 const dayLabel = computed(() => isDay2.value
   ? (locale.value === 'en' ? 'Day 2' : 'יום 2')
   : (locale.value === 'en' ? 'Day 1' : 'יום 1')
@@ -52,7 +53,7 @@ const goToGame = () => {
 const submitList = async () => {
   formError.value = ''
   if (!identifier.value.trim()) { formError.value = t('login.errors.emptyIdentifier'); return }
-  const ok = await auth.login(identifier.value.trim(), '', isDay2.value ? 2 : 1)
+  const ok = await auth.login(identifier.value.trim(), '', isDay2.value ? 2 : 1, isVerif.value)
   if (ok) {
     goToGame()
   } else if (auth.error === 'NOT_ON_LIST') {
@@ -71,7 +72,7 @@ const submitOpen = async () => {
   formError.value = ''
   if (!pseudo.value.trim()) { formError.value = t('login.errors.emptyPseudo'); return }
   if (pseudo.value.trim().length < 2) { formError.value = t('login.errors.pseudoTooShort'); return }
-  const ok = await auth.loginOpen(pseudo.value, isDay2.value ? 2 : 1)
+  const ok = await auth.loginOpen(pseudo.value, isDay2.value ? 2 : 1, isVerif.value)
   if (ok) {
     goToGame()
   } else if (auth.error === 'INVALID_PSEUDO') {
@@ -113,10 +114,10 @@ const submit = () => isOpenMode.value ? submitOpen() : submitList()
              style="max-width: 180px; max-height: 120px; object-fit: contain;" />
         <h1 class="text-3xl font-bold text-white"
             style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-          {{ t('login.title') }}
+          {{ (locale === 'en' ? gameCtx.loginTitleEn : gameCtx.loginTitle) || t('login.title') }}
         </h1>
         <p class="text-slate-400 text-sm mt-2">{{ settings.eventName || t('app.tagline') }}</p>
-        <div class="flex items-center justify-center mt-4">
+        <div v-if="isDay2 || settings.gameDays > 1" class="flex items-center justify-center mt-4">
           <span class="px-4 py-1 rounded-full text-sm font-bold"
                 :class="isDay2 ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'">
             {{ dayLabel }}

@@ -105,7 +105,17 @@ export const useGameStore = defineStore('game', () => {
 
       const team       = authStore.team
       const currentDay = team?.day ?? 1
-      const dayOrder   = currentDay === 1 ? team?.day1Order : team?.day2Order
+      let dayOrder     = currentDay === 1 ? team?.day1Order : team?.day2Order
+
+      // Verif team: on first load assign all current checkpoints as their route
+      if (team?.isVerif && !dayOrder?.length && authStore.pseudo) {
+        const allCps = await getCheckpoints(gid)
+        dayOrder = allCps.map(cp => cp.id)
+        if (dayOrder.length) {
+          await saveTeamDayOrder(gid, authStore.pseudo, currentDay, dayOrder)
+          await authStore.refreshTeam()
+        }
+      }
 
       track.value = authStore.trackId ? await getTrack(gid, authStore.trackId) : null
 
@@ -255,11 +265,12 @@ export const useGameStore = defineStore('game', () => {
 
   const answerQuestion = async (isCorrect, bonusPoints = 0) => {
     const cp = currentCheckpoint.value
-    if (!cp || !authStore.pseudo) return
+    if (!cp) return
     const pts = isCorrect ? (cp.pointsCorrect ?? 5) + bonusPoints : -(cp.pointsWrong ?? 1)
     lastPointsDelta.value = pts
     pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
     checkpointDelta.value += pts
+    if (!authStore.pseudo) return
     await adjustPoints(_gid(), authStore.pseudo, pts)
     await authStore.refreshTeam()
   }

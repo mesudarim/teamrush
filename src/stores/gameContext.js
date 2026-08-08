@@ -6,9 +6,11 @@ import { db } from '@/firebase/config'
 export const useGameContextStore = defineStore('gameContext', () => {
   const gameId     = ref('')
   const gameName   = ref('')
-  const logoUrl    = ref('')   // custom logo URL from settings
-  const appTitle   = ref('')   // custom display title (he)
-  const appTitleEn = ref('')   // custom display title (en)
+  const logoUrl      = ref('')
+  const appTitle     = ref('')
+  const appTitleEn   = ref('')
+  const loginTitle   = ref('')
+  const loginTitleEn = ref('')
 
   let unsub         = null
   let unsubSettings = null
@@ -27,9 +29,11 @@ export const useGameContextStore = defineStore('gameContext', () => {
     unsubSettings = onSnapshot(doc(db, 'games', id, 'settings', 'global'), (snap) => {
       if (snap.exists()) {
         const d = snap.data()
-        logoUrl.value    = d.logoUrl    ?? ''
-        appTitle.value   = d.appTitle   ?? ''
-        appTitleEn.value = d.appTitleEn ?? ''
+        logoUrl.value      = d.logoUrl      ?? ''
+        appTitle.value     = d.appTitle     ?? ''
+        appTitleEn.value   = d.appTitleEn   ?? ''
+        loginTitle.value   = d.loginTitle   ?? ''
+        loginTitleEn.value = d.loginTitleEn ?? ''
       }
     })
   }
@@ -39,5 +43,5 @@ export const useGameContextStore = defineStore('gameContext', () => {
     unsub = null; unsubSettings = null
   }
 
-  return { gameId, gameName, logoUrl, appTitle, appTitleEn, setGame, cleanup }
+  return { gameId, gameName, logoUrl, appTitle, appTitleEn, loginTitle, loginTitleEn, setGame, cleanup }
 })

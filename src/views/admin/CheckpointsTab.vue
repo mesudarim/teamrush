@@ -66,13 +66,14 @@ function emptyForm() {
       instruction: '', instructionEn: '',
       questions: [emptyQuestion()],
       puzzleImageUrl: '',
+      keywords: [], ordered: false,
     },
     pointsCorrect: 5,
     pointsWrong: 1,
   }
 }
 
-const missionTypes = ['TextValidation', 'QrScanMission', 'MultipleChoice', 'MultiSelect', 'MissingWord', 'PhotoCapture', 'CompassMission', 'PuzzleMission', 'AudioRecorder', 'HarpMission']
+const missionTypes = ['TextValidation', 'MultipleFields', 'QrScanMission', 'MultipleChoice', 'MultiSelect', 'MissingWord', 'PhotoCapture', 'CompassMission', 'PuzzleMission', 'AudioRecorder', 'HarpMission']
 
 // ─── Puzzle image ────────────────────────────────────────────────────────────
 
@@ -780,7 +781,7 @@ const stageModeLabel = (cp) => {
           <button type="button" @click="toggle('validation')" class="w-full flex items-center justify-between gap-2 px-5 py-3 bg-slate-800 hover:bg-slate-700/80 transition-colors text-start">
             <div class="flex items-center gap-2">
               <span>📍</span>
-              <h3 class="text-xs font-black text-amber-400 uppercase tracking-wider">Validation sur place</h3>
+              <h3 class="text-xs font-black text-amber-400 uppercase tracking-wider">{{ t('admin.checkpoints.sectionVerification') }}</h3>
             </div>
             <svg class="w-4 h-4 text-slate-400 transition-transform shrink-0" :class="sections.validation ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
@@ -1099,6 +1100,48 @@ const stageModeLabel = (cp) => {
                class="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-3 text-amber-300 text-sm space-y-1">
             <p class="font-bold">📷 {{ t('admin.missions.photoMissionNote') }}</p>
             <p class="text-amber-400/80">{{ t('admin.missions.photoMissionNoteBody') }}</p>
+          </div>
+
+          <!-- ── MultipleFields: question + keywords + ordered ── -->
+          <div v-if="form.missionType === 'MultipleFields'" class="space-y-3">
+            <div class="grid md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.questionLabel') }}</label>
+                <textarea v-model="form.missionConfig.questions[0].question" rows="2" class="input-field resize-none text-sm" placeholder="שאלה..." />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.checkpoints.questionEnLabel') }}</label>
+                <textarea v-model="form.missionConfig.questions[0].questionEn" rows="2" class="input-field resize-none text-sm" placeholder="Question..." />
+              </div>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer select-none text-sm">
+              <input type="checkbox" v-model="form.missionConfig.ordered" class="w-4 h-4 accent-amber-400" />
+              <span class="text-slate-300">{{ t('admin.checkpoints.multiFieldOrdered') }}</span>
+            </label>
+            <div class="space-y-2">
+              <div class="flex items-baseline justify-between">
+                <label class="block text-xs font-semibold text-slate-400">{{ t('admin.checkpoints.multiFieldKeywords') }}</label>
+                <span v-if="form.missionConfig.ordered" class="text-xs text-amber-400 font-semibold">↕ {{ t('admin.checkpoints.multiFieldOrderedPositions') }}</span>
+              </div>
+              <div
+                v-for="(kw, i) in form.missionConfig.keywords"
+                :key="i"
+                :class="['flex items-center gap-2 p-2 rounded-xl border transition-colors',
+                  form.missionConfig.ordered ? 'bg-amber-500/5 border-amber-500/30' : 'bg-slate-900/60 border-slate-700']"
+              >
+                <span :class="['text-xs font-bold tabular-nums w-5 text-center shrink-0', form.missionConfig.ordered ? 'text-amber-400' : 'text-slate-500']">{{ i + 1 }}</span>
+                <input v-model="kw.he" class="input-field input-sm flex-1 text-sm" :placeholder="t('admin.checkpoints.keywordPlaceholderHe')" />
+                <input v-model="kw.en" class="input-field input-sm flex-1 text-sm" :placeholder="t('admin.checkpoints.keywordPlaceholderEn')" />
+                <div v-if="form.missionConfig.ordered" class="flex flex-col gap-0.5 shrink-0">
+                  <button @click="i > 0 && form.missionConfig.keywords.splice(i - 1, 0, form.missionConfig.keywords.splice(i, 1)[0])" :disabled="i === 0" class="text-slate-400 hover:text-amber-300 disabled:opacity-20 text-xs px-1">▲</button>
+                  <button @click="i < form.missionConfig.keywords.length - 1 && form.missionConfig.keywords.splice(i + 1, 0, form.missionConfig.keywords.splice(i, 1)[0])" :disabled="i === form.missionConfig.keywords.length - 1" class="text-slate-400 hover:text-amber-300 disabled:opacity-20 text-xs px-1">▼</button>
+                </div>
+                <button @click="form.missionConfig.keywords.splice(i, 1)" class="text-red-400 hover:text-red-300 shrink-0 p-1 rounded-lg hover:bg-red-500/10 transition-colors">✕</button>
+              </div>
+              <button @click="form.missionConfig.keywords.push({ he: '', en: '' })" class="text-xs text-amber-400 hover:text-amber-300 font-semibold">
+                + {{ t('admin.checkpoints.multiFieldAddKeyword') }}
+              </button>
+            </div>
           </div>
 
           <!-- ── TextValidation: simple explanation + answer + timer ── -->

@@ -50,6 +50,12 @@ const routes = [
     component: () => import('@/views/player/LeaderboardView.vue'),
   },
   {
+    path: '/g/:gameId/verif',
+    name: 'CheckpointReview',
+    component: () => import('@/views/player/LoginView.vue'),
+    meta: { guest: true, verifMode: true },
+  },
+  {
     path: '/g/:gameId/resultats',
     name: 'Day1Results',
     component: () => import('@/views/player/ResultsView.vue'),

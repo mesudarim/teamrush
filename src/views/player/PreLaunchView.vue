@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -145,6 +145,56 @@ const startMissions = () => {
   scrollTop()
 }
 
+// ── MultipleFields inline logic ───────────────────────────────────────────────
+const multiValues      = ref([])
+const multiSubmitted   = ref(false)
+const multiCorrect     = ref(false)
+
+watch(missionKey, () => {
+  multiValues.value    = []
+  multiSubmitted.value = false
+  multiCorrect.value   = false
+  if (currentMission.value?.type === 'MultipleFields') {
+    multiValues.value = Array(currentMission.value.keywords?.length ?? 0).fill('')
+  }
+})
+
+const multiPools = computed(() => {
+  const clean = s => s.trim().toLowerCase()
+  return (currentMission.value?.keywords ?? []).map(kw =>
+    [...(kw.he ?? '').split(','), ...(kw.en ?? '').split(',')]
+      .map(clean).filter(Boolean)
+  )
+})
+
+const fieldSlotMatch = computed(() => {
+  const clean = s => s.trim().toLowerCase()
+  const used = new Set()
+  return multiValues.value.map(v => {
+    const c = clean(v)
+    if (!c) return -1
+    const idx = multiPools.value.findIndex((pool, i) => !used.has(i) && pool.includes(c))
+    if (idx !== -1) used.add(idx)
+    return idx
+  })
+})
+
+const fieldIsGreen   = computed(() => fieldSlotMatch.value.map(s => s !== -1))
+const allFieldsGreen = computed(() => fieldIsGreen.value.length > 0 && fieldIsGreen.value.every(Boolean))
+
+const submitMulti = () => {
+  if (multiValues.value.some(v => !v?.trim())) return
+  multiSubmitted.value = true
+  if (allFieldsGreen.value) {
+    multiCorrect.value = true
+    onCorrect()
+  } else {
+    multiCorrect.value = false
+    onWrong()
+    setTimeout(() => { multiSubmitted.value = false }, 1800)
+  }
+}
+
 const onCorrect = (bonusPoints = 0) => {
   game.answerPreLaunchMission(true, bonusPoints, currentMission.value).catch(() => {})
   // Short delay so the player sees the green answer before the component remounts
@@ -272,7 +322,55 @@ const launchGame = async () => {
 
           <!-- Mission component -->
           <div class="flex-1 overflow-y-auto">
+
+            <!-- MultipleFields — inline rendering -->
+            <div v-if="currentMission.type === 'MultipleFields'"
+                 class="p-6 max-w-sm mx-auto w-full space-y-4 animate-slide-up">
+
+              <!-- Instruction -->
+              <div v-if="currentMission.instruction || currentMission.instructionEn"
+                   class="text-slate-200 text-base font-semibold text-center leading-snug whitespace-pre-line">
+                {{ locale === 'en' ? (currentMission.instructionEn || currentMission.instruction) : (currentMission.instruction || currentMission.instructionEn) }}
+              </div>
+
+              <p class="text-xs text-slate-400 text-center">{{ t('game.stage1.multiFieldHint') }}</p>
+
+              <!-- Input fields -->
+              <div v-for="(_, i) in (currentMission.keywords ?? [])" :key="i" class="flex items-center gap-2">
+                <span class="text-slate-500 text-xs font-mono w-5 text-center shrink-0">{{ i + 1 }}</span>
+                <input
+                  v-model="multiValues[i]"
+                  type="text"
+                  class="input-field text-center font-bold tracking-widest flex-1 transition-all"
+                  :class="fieldIsGreen[i] ? 'border-green-500 ring-2 ring-green-500/30'
+                        : (multiSubmitted && !multiCorrect ? 'border-red-500 ring-2 ring-red-500/30' : '')"
+                  :placeholder="t('game.stage1.placeholder')"
+                  @keyup.enter="submitMulti"
+                  :disabled="multiCorrect"
+                  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                />
+                <span v-if="fieldIsGreen[i]" class="text-green-400 text-lg shrink-0">✓</span>
+                <span v-else class="w-5 shrink-0" />
+              </div>
+
+              <!-- Feedback -->
+              <div v-if="multiSubmitted && !multiCorrect"
+                   class="flex items-center justify-center gap-2 p-3 rounded-xl text-sm font-semibold bg-red-500/15 border border-red-500/30 text-red-400">
+                ❌ {{ t('game.stage1.multiFieldWrong') }}
+              </div>
+
+              <button
+                @click="submitMulti"
+                :disabled="multiValues.some(v => !v?.trim()) || multiCorrect"
+                class="btn-primary w-full"
+              >
+                {{ t('game.stage1.submit') }}
+              </button>
+            </div>
+
+            <!-- Standard mission component (MultipleChoice / TextValidation) -->
             <component
+              v-else
               :is="currentMission.type === 'MultipleChoice' ? MultipleChoice : TextValidation"
               :key="missionKey"
               :checkpoint="fakeCheckpoint"

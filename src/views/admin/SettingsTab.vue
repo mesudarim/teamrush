@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
@@ -13,14 +13,33 @@ const admin = useAdminStore()
 const gid   = () => route.params.gameId
 
 // ── Branding ──────────────────────────────────────────────────────────────────
-const logoFile    = ref(null)   // File object if new logo selected
-const logoPreview = ref('')     // local preview URL before upload
+const logoFile    = ref(null)
+const logoPreview = ref('')
 
-const onLogoFile = (e) => {
+const resizeLogo = (file, maxWidth = 300) => new Promise((resolve) => {
+  const img = new Image()
+  const url = URL.createObjectURL(file)
+  img.onload = () => {
+    URL.revokeObjectURL(url)
+    const scale = img.width > maxWidth ? maxWidth / img.width : 1
+    const w = Math.round(img.width * scale)
+    const h = Math.round(img.height * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+    const mime = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+    canvas.toBlob(resolve, mime, 0.92)
+  }
+  img.src = url
+})
+
+const onLogoFile = async (e) => {
   const file = e.target.files?.[0]
   if (!file) return
-  logoFile.value    = file
-  logoPreview.value = URL.createObjectURL(file)
+  const resized = await resizeLogo(file, 300)
+  logoFile.value    = resized
+  logoPreview.value = URL.createObjectURL(resized)
 }
 
 const normalizeOpenRouting = (r) => ({
@@ -31,7 +50,7 @@ const normalizeOpenRouting = (r) => ({
 
 const form = ref({
   // ── Branding ────────────────────────────────────────
-  logoUrl: '', appTitle: '', appTitleEn: '',
+  logoUrl: '', appTitle: '', appTitleEn: '', loginTitle: '', loginTitleEn: '',
   // ── Structure du jeu ────────────────────────────────
   registrationMode: 'list',
   openModeRouting: normalizeOpenRouting(null),
@@ -68,13 +87,14 @@ const tapisQrValue = (day) => {
 }
 
 const copiedUrl = ref('')
-const base = computed(() => `${window.location.origin}/g/${gid()}`)
+const base = computed(() => `https://teamrush.web.app/g/${gid()}`)
 const playerUrls = computed(() => [
-  { label: 'Jour 1',          url: `${base.value}` },
-  { label: 'Jour 2',          url: `${base.value}/day2` },
-  { label: 'Résultats J1',    url: `${base.value}/resultats` },
-  { label: 'Résultats J2',    url: `${base.value}/resultats/jour2` },
-  { label: 'Résultats Total', url: `${base.value}/resultats/total` },
+  { labelKey: 'admin.settings.playerLinks.day1',   url: `${base.value}` },
+  { labelKey: 'admin.settings.playerLinks.day2',   url: `${base.value}/day2` },
+  { labelKey: 'admin.settings.playerLinks.res1',   url: `${base.value}/resultats` },
+  { labelKey: 'admin.settings.playerLinks.res2',   url: `${base.value}/resultats/jour2` },
+  { labelKey: 'admin.settings.playerLinks.total',  url: `${base.value}/resultats/total` },
+  { labelKey: 'admin.settings.playerLinks.review', url: `${base.value}/verif` },
 ])
 const copyUrl = (url) => {
   navigator.clipboard.writeText(url).then(() => {
@@ -93,6 +113,7 @@ function emptyPreLaunchMission() {
     choices: [{ text: '', textEn: '', isCorrect: false }, { text: '', textEn: '', isCorrect: false }],
     answer: '', answerEn: '',
     timerEnabled: false, timerSeconds: 60,
+    keywords: [], ordered: false,
   }
 }
 
@@ -109,6 +130,10 @@ const moveMission = (day, i, dir) => {
 const removeMission = (day, i) => form.value[`preLaunchDay${day}Missions`].splice(i, 1)
 const saved = ref(false)
 const saving = ref(false)
+const savingRouting = ref(false)
+const savedRouting  = ref(false)
+const savingPaths   = ref(false)
+const savedPaths    = ref(false)
 const confirmReset = ref(false)
 
 // ── Open Mode Routing ─────────────────────────────────────────────────────────
@@ -129,6 +154,8 @@ const toggleZoneCheckpoint = (zone, cpId) => {
   if (idx === -1) zone.checkpointIds.push(cpId)
   else zone.checkpointIds.splice(idx, 1)
 }
+const cpUsedElsewhere = (zone, cpId) =>
+  form.value.openModeRouting.zones.some(z => z !== zone && z.checkpointIds.includes(cpId))
 const addPath = () => {
   form.value.openModeRouting.paths.push({ id: 'p_' + Date.now(), name: '', zoneOrder: [] })
 }
@@ -141,11 +168,96 @@ const moveZoneInPath = (path, zIdx, dir) => {
 const addZoneToPath  = (path, zoneId) => { if (!path.zoneOrder.includes(zoneId)) path.zoneOrder.push(zoneId) }
 const removeZoneFromPath = (path, idx) => { path.zoneOrder.splice(idx, 1) }
 
-const openRoutingTotal = computed(() => {
-  const r = form.value.openModeRouting
-  const fromZones = r.zones.reduce((s, z) => s + (z.pickCount || 0), 0)
-  return fromZones + (r.finalCheckpointId ? 1 : 0)
-})
+const openRoutingZoneTotal = computed(() =>
+  form.value.openModeRouting.zones.reduce((s, z) => s + (z.pickCount || 0), 0)
+)
+const openRoutingTotal = computed(() =>
+  openRoutingZoneTotal.value + (form.value.openModeRouting.finalCheckpointId ? 1 : 0)
+)
+
+// number shown next to each checkpoint (position in creation-order list)
+const cpNumberMap = computed(() =>
+  Object.fromEntries(allCheckpoints.value.map((cp, i) => [cp.id, i + 1]))
+)
+
+// ── Checkpoint overview map (modal) ───────────────────────────────────────────
+const ZONE_COLORS = [
+  { bg: '#ef4444', border: '#991b1b', text: '#fff' },
+  { bg: '#3b82f6', border: '#1e40af', text: '#fff' },
+  { bg: '#22c55e', border: '#14532d', text: '#fff' },
+  { bg: '#a855f7', border: '#581c87', text: '#fff' },
+  { bg: '#f97316', border: '#7c2d12', text: '#fff' },
+  { bg: '#06b6d4', border: '#164e63', text: '#fff' },
+  { bg: '#ec4899', border: '#831843', text: '#fff' },
+  { bg: '#84cc16', border: '#365314', text: '#000' },
+  { bg: '#eab308', border: '#713f12', text: '#000' },
+  { bg: '#14b8a6', border: '#134e4a', text: '#fff' },
+]
+const UNASSIGNED_COLOR = { bg: '#6b7280', border: '#374151', text: '#fff' }
+
+const showMapModal = ref(false)
+const mapModalRef  = ref(null)
+const mapLegend    = ref([])
+let _mapInst = null
+
+const openMapModal = async () => {
+  showMapModal.value = true
+  await nextTick()
+  const L = (await import('leaflet')).default
+  await import('leaflet/dist/leaflet.css')
+  if (_mapInst) { _mapInst.remove(); _mapInst = null }
+  _mapInst = L.map(mapModalRef.value, { zoomControl: true })
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+  }).addTo(_mapInst)
+
+  const zones = form.value.openModeRouting?.zones ?? []
+
+  // Build cpId → zone index lookup
+  const cpZoneIndex = {}
+  zones.forEach((zone, zi) => {
+    (zone.checkpointIds ?? []).forEach(id => { cpZoneIndex[id] = zi })
+  })
+
+  const withCoords = allCheckpoints.value.filter(cp => cp.mapLat && cp.mapLng)
+  if (!withCoords.length) {
+    _mapInst.setView([31.7683, 35.2137], 13)
+    mapLegend.value = []
+    return
+  }
+
+  const hasUnassigned = withCoords.some(cp => cpZoneIndex[cp.id] === undefined)
+  mapLegend.value = [
+    ...zones.map((z, i) => ({ name: z.name || `Zone ${i + 1}`, color: ZONE_COLORS[i % ZONE_COLORS.length] })),
+    ...(hasUnassigned ? [{ name: t('admin.settings.openRouting.unassigned'), color: UNASSIGNED_COLOR }] : []),
+  ]
+
+  const bounds = []
+  withCoords.forEach(cp => {
+    const num      = cpNumberMap.value[cp.id]
+    const zoneIdx  = cpZoneIndex[cp.id]
+    const color    = zoneIdx !== undefined ? ZONE_COLORS[zoneIdx % ZONE_COLORS.length] : UNASSIGNED_COLOR
+    const zoneName = zoneIdx !== undefined
+      ? (zones[zoneIdx].name || `Zone ${zoneIdx + 1}`)
+      : t('admin.settings.openRouting.unassigned')
+    const icon = L.divIcon({
+      html: `<div style="background:${color.bg};color:${color.text};border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;border:2px solid ${color.border};box-shadow:0 2px 6px rgba(0,0,0,.6)">${num}</div>`,
+      className: '',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+    })
+    L.marker([cp.mapLat, cp.mapLng], { icon })
+      .bindTooltip(`<b>#${num}</b> — ${cp.title || cp.id}<br><span style="color:${color.bg}">● ${zoneName}</span>`, { direction: 'top', offset: [0, -16] })
+      .addTo(_mapInst)
+    bounds.push([cp.mapLat, cp.mapLng])
+  })
+  _mapInst.fitBounds(bounds, { padding: [50, 50] })
+}
+
+const closeMapModal = () => {
+  showMapModal.value = false
+  if (_mapInst) { _mapInst.remove(); _mapInst = null }
+}
 
 // ── Admin Emails ──────────────────────────────────────────────────────────────
 const adminEmails = ref([])
@@ -170,6 +282,30 @@ watch(() => admin.settings, (s) => {
   form.value = { ...form.value, ...s }
   form.value.openModeRouting = normalizeOpenRouting(s?.openModeRouting)
 }, { deep: true })
+
+const _saveOpenRouting = () => admin.saveSettings({ openModeRouting: form.value.openModeRouting })
+
+const saveRouting = async () => {
+  savingRouting.value = true
+  try {
+    await _saveOpenRouting()
+    savedRouting.value = true
+    setTimeout(() => { savedRouting.value = false }, 2500)
+  } finally {
+    savingRouting.value = false
+  }
+}
+
+const savePaths = async () => {
+  savingPaths.value = true
+  try {
+    await _saveOpenRouting()
+    savedPaths.value = true
+    setTimeout(() => { savedPaths.value = false }, 2500)
+  } finally {
+    savingPaths.value = false
+  }
+}
 
 const save = async () => {
   saving.value = true
@@ -278,15 +414,26 @@ const doResetAll = async () => {
         </div>
       </div>
       <p class="text-xs text-slate-500">{{ t('admin.settings.brandingAppTitleHint') }}</p>
+      <div class="grid md:grid-cols-2 gap-4 mt-4">
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.settings.brandingLoginTitle') }}</label>
+          <input v-model="form.loginTitle" class="input-field" />
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.settings.brandingLoginTitleEn') }}</label>
+          <input v-model="form.loginTitleEn" class="input-field" />
+        </div>
+      </div>
+      <p class="text-xs text-slate-500">{{ t('admin.settings.brandingLoginTitleHint') }}</p>
     </div>
 
     <!-- ══ Structure du jeu ══════════════════════════════════════════════════ -->
     <div class="card-glow space-y-6 mb-6">
-      <h3 class="text-sm font-bold text-white">🗓 Structure du jeu</h3>
+      <h3 class="text-sm font-bold text-white">🗓 {{ t('admin.settings.gameStructure.title') }}</h3>
 
       <!-- Nombre de jours -->
       <div class="space-y-2">
-        <label class="block text-sm font-semibold text-slate-300">Nombre de jours</label>
+        <label class="block text-sm font-semibold text-slate-300">{{ t('admin.settings.gameStructure.gameDays') }}</label>
         <div class="flex gap-2 flex-wrap">
           <button
             v-for="n in [1, 2]"
@@ -298,7 +445,7 @@ const doResetAll = async () => {
                 ? 'border-amber-500 bg-amber-500/10 text-amber-400'
                 : 'border-slate-600 bg-slate-700 text-slate-400 hover:border-slate-500']"
           >
-            {{ n }} jour{{ n > 1 ? 's' : '' }}
+            {{ t('admin.settings.gameStructure.dayCount', { n }) }}
           </button>
         </div>
       </div>
@@ -308,10 +455,13 @@ const doResetAll = async () => {
 
       <!-- Pré-lancement -->
       <div class="space-y-4">
-        <label class="block text-sm font-semibold text-slate-300">Pré-lancement <span class="text-xs text-slate-500 font-normal">(avant le premier checkpoint)</span></label>
+        <label class="block text-sm font-semibold text-slate-300">
+          {{ t('admin.settings.gameStructure.preLaunch') }}
+          <span class="text-xs text-slate-500 font-normal ms-1">({{ t('admin.settings.gameStructure.preLaunchHint') }})</span>
+        </label>
 
-        <!-- Onglets jours -->
-        <div class="flex gap-2">
+        <!-- Onglets jours (only shown when multiple days) -->
+        <div v-if="availableDays.length > 1" class="flex gap-2">
           <button
             v-for="d in availableDays"
             :key="d"
@@ -322,7 +472,7 @@ const doResetAll = async () => {
                 ? 'border-amber-500 bg-amber-500/10 text-amber-400'
                 : 'border-slate-600 text-slate-400 hover:text-slate-200']"
           >
-            Jour {{ d }}
+            {{ t('admin.settings.gameStructure.day', { d }) }}
           </button>
         </div>
 
@@ -339,17 +489,15 @@ const doResetAll = async () => {
                 class="w-4 h-4 accent-amber-500 cursor-pointer"
               />
               <div>
-                <span class="text-sm font-semibold text-slate-200">Activer le pré-lancement pour le jour {{ d }}</span>
-                <p class="text-xs text-slate-500 mt-0.5">
-                  Les joueurs verront cette séquence avant d'accéder au premier checkpoint.
-                </p>
+                <span class="text-sm font-semibold text-slate-200">{{ t('admin.settings.gameStructure.enablePreLaunch', { d }) }}</span>
+                <p class="text-xs text-slate-500 mt-0.5">{{ t('admin.settings.gameStructure.preLaunchDesc') }}</p>
               </div>
             </label>
 
             <!-- Éléments (visibles seulement si pré-lancement activé) -->
             <div v-if="form[`preLaunchDay${d}Enabled`]" class="space-y-3 ps-2 border-s-2 border-amber-500/30">
 
-              <!-- ① Texte d'introduction -->
+              <!-- ① Intro text -->
               <div class="rounded-xl border border-slate-700 overflow-hidden">
                 <label class="flex items-center gap-3 px-4 py-3 bg-slate-800 cursor-pointer select-none">
                   <input
@@ -358,20 +506,20 @@ const doResetAll = async () => {
                     @change="form[`preLaunchDay${d}ShowIntro`] = $event.target.checked"
                     class="w-4 h-4 accent-amber-500 cursor-pointer"
                   />
-                  <span class="text-sm font-semibold text-slate-200">① Texte d'introduction</span>
+                  <span class="text-sm font-semibold text-slate-200">① {{ t('admin.settings.gameStructure.introText') }}</span>
                 </label>
                 <div v-if="form[`preLaunchDay${d}ShowIntro`]" class="p-4 bg-slate-800/40 grid md:grid-cols-2 gap-3">
                   <div>
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Hébreu</label>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.settings.gameStructure.hebrew') }}</label>
                     <textarea
                       v-model="form[`preLaunchDay${d}Intro`]"
                       rows="3"
                       class="input-field resize-none text-sm"
-                      placeholder="Texte affiché avant les missions…"
+                      :placeholder="t('admin.settings.gameStructure.introPlaceholder')"
                     />
                   </div>
                   <div>
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Anglais</label>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.settings.gameStructure.english') }}</label>
                     <textarea
                       v-model="form[`preLaunchDay${d}IntroEn`]"
                       rows="3"
@@ -382,7 +530,7 @@ const doResetAll = async () => {
                 </div>
               </div>
 
-              <!-- ② Vidéo -->
+              <!-- ② Video -->
               <div class="rounded-xl border border-slate-700 overflow-hidden">
                 <label class="flex items-center gap-3 px-4 py-3 bg-slate-800 cursor-pointer select-none">
                   <input
@@ -391,20 +539,20 @@ const doResetAll = async () => {
                     @change="form[`preLaunchDay${d}ShowVideo`] = $event.target.checked"
                     class="w-4 h-4 accent-amber-500 cursor-pointer"
                   />
-                  <span class="text-sm font-semibold text-slate-200">② Vidéo</span>
+                  <span class="text-sm font-semibold text-slate-200">② {{ t('admin.settings.gameStructure.video') }}</span>
                 </label>
                 <div v-if="form[`preLaunchDay${d}ShowVideo`]" class="p-4 bg-slate-800/40">
-                  <label class="block text-xs font-semibold text-slate-400 mb-1">URL de la vidéo</label>
+                  <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.settings.gameStructure.videoUrl') }}</label>
                   <input
                     v-model="form[`preLaunchDay${d}VideoUrl`]"
                     class="input-field text-sm"
                     placeholder="https://youtube.com/shorts/..."
                   />
-                  <p class="text-xs text-slate-500 mt-1">YouTube Shorts, standard ou embed URL</p>
+                  <p class="text-xs text-slate-500 mt-1">{{ t('admin.settings.gameStructure.videoHint') }}</p>
                 </div>
               </div>
 
-              <!-- ③ Texte de clôture -->
+              <!-- ③ Outro text -->
               <div class="rounded-xl border border-slate-700 overflow-hidden">
                 <label class="flex items-center gap-3 px-4 py-3 bg-slate-800 cursor-pointer select-none">
                   <input
@@ -413,20 +561,20 @@ const doResetAll = async () => {
                     @change="form[`preLaunchDay${d}ShowOutro`] = $event.target.checked"
                     class="w-4 h-4 accent-amber-500 cursor-pointer"
                   />
-                  <span class="text-sm font-semibold text-slate-200">③ Texte de clôture</span>
+                  <span class="text-sm font-semibold text-slate-200">③ {{ t('admin.settings.gameStructure.outroText') }}</span>
                 </label>
                 <div v-if="form[`preLaunchDay${d}ShowOutro`]" class="p-4 bg-slate-800/40 grid md:grid-cols-2 gap-3">
                   <div>
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Hébreu</label>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.settings.gameStructure.hebrew') }}</label>
                     <textarea
                       v-model="form[`preLaunchDay${d}Outro`]"
                       rows="3"
                       class="input-field resize-none text-sm"
-                      placeholder="Texte affiché après les missions…"
+                      :placeholder="t('admin.settings.gameStructure.outroPlaceholder')"
                     />
                   </div>
                   <div>
-                    <label class="block text-xs font-semibold text-slate-400 mb-1">Anglais</label>
+                    <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.settings.gameStructure.english') }}</label>
                     <textarea
                       v-model="form[`preLaunchDay${d}OutroEn`]"
                       rows="3"
@@ -443,9 +591,9 @@ const doResetAll = async () => {
       </div>
     </div>
 
-    <!-- Mode d'inscription -->
+    <!-- Registration mode -->
     <div class="card-glow space-y-3 mb-6">
-      <h3 class="text-sm font-bold text-white">Mode d'inscription des joueurs</h3>
+      <h3 class="text-sm font-bold text-white">{{ t('admin.settings.gameStructure.registrationTitle') }}</h3>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label
           :class="[
@@ -457,11 +605,8 @@ const doResetAll = async () => {
         >
           <input type="radio" v-model="form.registrationMode" value="list" class="mt-0.5 accent-amber-500" />
           <div>
-            <div class="font-semibold text-white text-sm">Liste préchargée</div>
-            <div class="text-xs text-slate-400 mt-0.5">
-              Les participants doivent être importés à l'avance. Connexion par numéro de téléphone.
-              <span class="text-amber-400 font-medium">Mode actuel du premier jeu.</span>
-            </div>
+            <div class="font-semibold text-white text-sm">{{ t('admin.settings.gameStructure.listMode') }}</div>
+            <div class="text-xs text-slate-400 mt-0.5">{{ t('admin.settings.gameStructure.listModeDesc') }}</div>
           </div>
         </label>
 
@@ -475,11 +620,8 @@ const doResetAll = async () => {
         >
           <input type="radio" v-model="form.registrationMode" value="open" class="mt-0.5 accent-blue-500" />
           <div>
-            <div class="font-semibold text-white text-sm">Inscription libre</div>
-            <div class="text-xs text-slate-400 mt-0.5">
-              Chaque joueur choisit son propre pseudo. Pas de liste à préparer.
-              Le pseudo apparaît dans le classement et les résultats.
-            </div>
+            <div class="font-semibold text-white text-sm">{{ t('admin.settings.gameStructure.openMode') }}</div>
+            <div class="text-xs text-slate-400 mt-0.5">{{ t('admin.settings.gameStructure.openModeDesc') }}</div>
           </div>
         </label>
       </div>
@@ -488,9 +630,38 @@ const doResetAll = async () => {
     <!-- ══ Open Mode Routing ════════════════════════════════════════════════════ -->
     <Transition name="saved">
       <div v-if="form.registrationMode === 'open'" class="card-glow space-y-5 mb-6">
-        <div>
-          <h3 class="text-sm font-bold text-white">🗺 {{ t('admin.settings.openRouting.title') }}</h3>
-          <p class="text-xs text-slate-400 mt-1">{{ t('admin.settings.openRouting.desc') }}</p>
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-bold text-white">🗺 {{ t('admin.settings.openRouting.title') }}</h3>
+            <p class="text-xs text-slate-400 mt-1">{{ t('admin.settings.openRouting.desc') }}</p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button
+              v-if="allCheckpoints.length"
+              @click="openMapModal"
+              class="flex items-center gap-1.5 btn-secondary text-xs px-3 py-1.5"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+              </svg>
+              {{ t('admin.settings.openRouting.openMap') }}
+            </button>
+            <button
+              @click="saveRouting"
+              :disabled="savingRouting"
+              class="flex items-center gap-1.5 btn-primary text-xs px-3 py-1.5"
+            >
+              <svg v-if="savingRouting" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+              <svg v-else-if="savedRouting" class="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+              </svg>
+              {{ savedRouting ? t('admin.settings.saved') : t('admin.settings.openRouting.saveRouting') }}
+            </button>
+          </div>
         </div>
 
         <!-- Final checkpoint -->
@@ -508,7 +679,13 @@ const doResetAll = async () => {
         <!-- Zones -->
         <div class="space-y-3">
           <div class="flex items-center justify-between">
-            <span class="text-sm font-semibold text-slate-200">{{ t('admin.settings.openRouting.zones') }}</span>
+            <div class="flex items-center gap-3">
+              <span class="text-sm font-semibold text-slate-200">{{ t('admin.settings.openRouting.zones') }}</span>
+              <span v-if="form.openModeRouting.zones.length"
+                    class="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
+                {{ openRoutingZoneTotal }} pts
+              </span>
+            </div>
             <button @click="addZone" class="btn-secondary text-xs px-3 py-1.5">+ {{ t('admin.settings.openRouting.addZone') }}</button>
           </div>
 
@@ -540,16 +717,20 @@ const doResetAll = async () => {
                 <label
                   v-for="cp in allCheckpoints.filter(c => c.id !== form.openModeRouting.finalCheckpointId)"
                   :key="cp.id"
-                  :class="['flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors select-none',
-                    zone.checkpointIds.includes(cp.id)
-                      ? 'bg-amber-500/15 border border-amber-500/40 text-amber-300'
-                      : 'bg-slate-700/50 border border-slate-600 text-slate-400 hover:border-slate-500']"
+                  :class="['flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors select-none',
+                    cpUsedElsewhere(zone, cp.id)
+                      ? 'opacity-35 cursor-not-allowed bg-slate-800/40 border border-slate-700 text-slate-600'
+                      : zone.checkpointIds.includes(cp.id)
+                        ? 'cursor-pointer bg-amber-500/15 border border-amber-500/40 text-amber-300'
+                        : 'cursor-pointer bg-slate-700/50 border border-slate-600 text-slate-400 hover:border-slate-500']"
                 >
                   <input type="checkbox"
                     :checked="zone.checkpointIds.includes(cp.id)"
+                    :disabled="cpUsedElsewhere(zone, cp.id)"
                     @change="toggleZoneCheckpoint(zone, cp.id)"
                     class="w-3 h-3 accent-amber-400 shrink-0"
                   />
+                  <span class="text-amber-400/70 shrink-0 font-bold">#{{ cpNumberMap[cp.id] }}</span>
                   <span class="truncate">{{ cp.title || cp.id }}</span>
                 </label>
               </div>
@@ -562,7 +743,23 @@ const doResetAll = async () => {
         <div class="space-y-3">
           <div class="flex items-center justify-between">
             <span class="text-sm font-semibold text-slate-200">{{ t('admin.settings.openRouting.paths') }}</span>
-            <button @click="addPath" class="btn-secondary text-xs px-3 py-1.5">+ {{ t('admin.settings.openRouting.addPath') }}</button>
+            <div class="flex items-center gap-2">
+              <button @click="addPath" class="btn-secondary text-xs px-3 py-1.5">+ {{ t('admin.settings.openRouting.addPath') }}</button>
+              <button
+                @click="savePaths"
+                :disabled="savingPaths"
+                class="flex items-center gap-1.5 btn-primary text-xs px-3 py-1.5"
+              >
+                <svg v-if="savingPaths" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                <svg v-else-if="savedPaths" class="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                </svg>
+                {{ savedPaths ? t('admin.settings.saved') : t('admin.settings.openRouting.savePaths') }}
+              </button>
+            </div>
           </div>
 
           <p v-if="!form.openModeRouting.paths.length" class="text-xs text-slate-500 italic p-3 rounded-xl border border-dashed border-slate-600 text-center">
@@ -789,15 +986,15 @@ const doResetAll = async () => {
 
       <!-- ── Player URLs ── -->
       <div class="p-4 bg-slate-900/50 rounded-xl border border-slate-700 space-y-3">
-        <div class="font-semibold text-slate-200 text-sm">🔗 Liens joueurs</div>
+        <div class="font-semibold text-slate-200 text-sm">🔗 {{ t('admin.settings.playerLinks.title') }}</div>
         <div class="space-y-2">
-          <div v-for="({ label, url }) in playerUrls" :key="url"
+          <div v-for="({ labelKey, url }) in playerUrls" :key="url"
                class="flex items-center gap-2">
-            <span class="text-xs text-slate-400 w-14 shrink-0">{{ label }}</span>
+            <span class="text-xs text-slate-400 w-20 shrink-0">{{ t(labelKey) }}</span>
             <code class="flex-1 text-xs text-amber-300 bg-slate-800 rounded-lg px-3 py-2 truncate">{{ url }}</code>
             <button @click="copyUrl(url)"
                     class="shrink-0 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-semibold transition-colors">
-              {{ copiedUrl === url ? '✓' : 'Copier' }}
+              {{ copiedUrl === url ? '✓' : t('admin.settings.playerLinks.copy') }}
             </button>
           </div>
         </div>
@@ -847,8 +1044,9 @@ const doResetAll = async () => {
                   <span class="text-slate-400 text-sm font-bold shrink-0">#{{ mi + 1 }}</span>
                   <!-- Type selector -->
                   <select v-model="mission.type" class="input-field input-sm text-sm flex-1">
-                    <option value="MultipleChoice">QCM (Multiple Choice)</option>
-                    <option value="TextValidation">Texte libre (Text Validation)</option>
+                    <option value="MultipleChoice">{{ t('admin.missions.MultipleChoice') }}</option>
+                    <option value="TextValidation">{{ t('admin.missions.TextValidation') }}</option>
+                    <option value="MultipleFields">{{ t('admin.missions.MultipleFields') }}</option>
                   </select>
                   <!-- Move up/down -->
                   <button @click="moveMission(d, mi, -1)" :disabled="mi === 0" class="text-slate-400 hover:text-amber-300 disabled:opacity-20 px-1 text-sm">▲</button>
@@ -906,6 +1104,31 @@ const doResetAll = async () => {
                       <button @click="removeChoice(mission, ci)" :disabled="mission.choices.length <= 2" class="text-red-400 disabled:opacity-20 shrink-0">✕</button>
                     </div>
                     <button @click="addChoice(mission)" class="text-xs text-amber-400 hover:text-amber-300 font-semibold">+ {{ t('admin.settings.preLaunchAddChoice') }}</button>
+                  </div>
+                </template>
+
+                <!-- ── MultipleFields config ── -->
+                <template v-else-if="mission.type === 'MultipleFields'">
+                  <!-- Ordered toggle -->
+                  <label class="flex items-center gap-2 cursor-pointer select-none text-sm">
+                    <input type="checkbox" v-model="mission.ordered" class="w-4 h-4 accent-amber-400" />
+                    <span class="text-slate-300">{{ t('admin.checkpoints.multiFieldOrdered') }}</span>
+                  </label>
+                  <!-- Keyword rows -->
+                  <div class="space-y-2">
+                    <label class="block text-xs text-slate-500">{{ t('admin.checkpoints.multiFieldKeywords') }}</label>
+                    <div v-for="(kw, ki) in mission.keywords" :key="ki" class="flex items-center gap-2">
+                      <span class="text-xs text-slate-500 font-mono w-5 text-center shrink-0">{{ ki + 1 }}</span>
+                      <input v-model="kw.he" class="input-field input-sm text-sm flex-1" :placeholder="t('admin.checkpoints.keywordPlaceholderHe')" />
+                      <input v-model="kw.en" class="input-field input-sm text-sm flex-1" :placeholder="t('admin.checkpoints.keywordPlaceholderEn')" />
+                      <button @click="mission.keywords.splice(ki, 1)" class="text-red-400 hover:text-red-300 shrink-0 px-1 text-sm">✕</button>
+                    </div>
+                    <button
+                      @click="mission.keywords.push({ he: '', en: '' })"
+                      class="text-xs text-amber-400 hover:text-amber-300 font-semibold"
+                    >
+                      + {{ t('admin.checkpoints.multiFieldAddKeyword') }}
+                    </button>
                   </div>
                 </template>
 
@@ -1089,9 +1312,42 @@ const doResetAll = async () => {
       </div>
     </div>
   </div>
+
+  <!-- ══ Checkpoint overview map modal ═══════════════════════════════════════ -->
+  <Teleport to="body">
+    <Transition name="modal-fade">
+      <div v-if="showMapModal" class="fixed inset-0 z-[200] flex flex-col bg-black/90">
+        <!-- Header bar -->
+        <div class="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-700 shrink-0">
+          <span class="text-sm font-bold text-white">{{ t('admin.settings.openRouting.mapTitle') }}</span>
+          <button
+            @click="closeMapModal"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-sm font-semibold transition-colors"
+          >
+            ✕ {{ t('common.close') }}
+          </button>
+        </div>
+        <!-- Map + legend wrapper -->
+        <div class="flex-1 relative">
+          <div ref="mapModalRef" class="absolute inset-0" />
+          <!-- Zone legend -->
+          <div v-if="mapLegend.length"
+               class="absolute bottom-4 start-4 z-[400] bg-slate-900/90 backdrop-blur rounded-xl border border-slate-700 px-3 py-2.5 space-y-1.5 pointer-events-none">
+            <div v-for="item in mapLegend" :key="item.name" class="flex items-center gap-2 text-xs text-slate-200 font-medium">
+              <div class="w-4 h-4 rounded-full border-2 shrink-0"
+                   :style="{ background: item.color.bg, borderColor: item.color.border }" />
+              {{ item.name }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
 .saved-enter-active, .saved-leave-active { transition: all 0.3s; }
 .saved-enter-from, .saved-leave-to { opacity: 0; transform: translateY(-5px); }
+.modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.2s; }
+.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
 </style>
