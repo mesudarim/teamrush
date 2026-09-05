@@ -4,6 +4,7 @@ import {
   getTrack, getCheckpoint, getCheckpoints, updateTeamProgress, startCheckpointTimer,
   markTeamFinished, markDay1Complete, subscribeToTeam, adjustPoints,
   saveTeamPhase, saveTeamDayOrder, getSettings, subscribeToSettings, setPreLaunchDone,
+  claimNextPathIndex,
 } from '@/firebase/firestore'
 import { useAuthStore } from './auth'
 import { useGameContextStore } from './gameContext'
@@ -62,19 +63,25 @@ export const useGameStore = defineStore('game', () => {
 
   const currentQuestion = computed(() => questions.value[currentQuestionIndex.value] ?? null)
 
-  const _generateOpenModeRoute = (routing) => {
+  const _generateOpenModeRoute = (routing, universalIds = new Set(), pathIndex = 0) => {
     const { zones = [], paths = [], finalCheckpointId = '' } = routing
     if (!paths.length || !zones.length) return []
-    const path = paths[Math.floor(Math.random() * paths.length)]
+    const path    = paths[pathIndex % paths.length]
     const zoneMap = Object.fromEntries(zones.map(z => [z.id, z]))
-    const result = []
+    const result  = []
     for (const zoneId of (path.zoneOrder ?? [])) {
       const zone = zoneMap[zoneId]
       if (!zone) continue
-      const pool = (zone.checkpointIds ?? []).filter(id => id !== finalCheckpointId)
+      const pool      = (zone.checkpointIds ?? []).filter(id => id !== finalCheckpointId)
+      const universal = pool.filter(id => universalIds.has(id))
+      const regular   = pool.filter(id => !universalIds.has(id))
       const pickCount = Math.min(zone.pickCount || 1, pool.length)
-      const shuffled = [...pool].sort(() => Math.random() - 0.5)
-      result.push(...shuffled.slice(0, pickCount))
+      const remaining = Math.max(0, pickCount - universal.length)
+      const shuffled  = [...regular].sort(() => Math.random() - 0.5)
+      // Merge universals with random picks then shuffle so universals land anywhere
+      const picks = [...universal, ...shuffled.slice(0, remaining)]
+        .sort(() => Math.random() - 0.5)
+      result.push(...picks)
     }
     if (finalCheckpointId && !result.includes(finalCheckpointId)) result.push(finalCheckpointId)
     return result
@@ -127,13 +134,16 @@ export const useGameStore = defineStore('game', () => {
         // No pre-assigned route — try open-mode zone routing from settings
         const routing = gameSettings.value?.openModeRouting
         if (routing?.zones?.length && routing?.paths?.length) {
-          const generatedOrder = _generateOpenModeRoute(routing)
+          const allCps      = await getCheckpoints(gid)
+          const universalIds = new Set(allCps.filter(cp => cp.isUniversal).map(cp => cp.id))
+          const pathIndex    = await claimNextPathIndex(gid, routing.paths.length)
+          const generatedOrder = _generateOpenModeRoute(routing, universalIds, pathIndex)
           if (generatedOrder.length && authStore.pseudo) {
             await saveTeamDayOrder(gid, authStore.pseudo, authStore.team?.day ?? 1, generatedOrder)
             await authStore.refreshTeam()
           }
-          const loaded = await Promise.all(generatedOrder.map((id) => getCheckpoint(gid, id)))
-          checkpoints.value = loaded.filter(Boolean)
+          const cpMap = Object.fromEntries(allCps.map(cp => [cp.id, cp]))
+          checkpoints.value = generatedOrder.map(id => cpMap[id]).filter(Boolean)
         } else {
           // Absolute fallback: all checkpoints in creation order
           checkpoints.value = await getCheckpoints(gid)
@@ -239,14 +249,18 @@ export const useGameStore = defineStore('game', () => {
       const pts = cp?.pointsCorrect ?? 5
       checkpointDelta.value += pts
       pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
-      await adjustPoints(_gid(), authStore.pseudo, pts)
-      await authStore.refreshTeam()
+      if (authStore.pseudo) {
+        await adjustPoints(_gid(), authStore.pseudo, pts)
+        await authStore.refreshTeam()
+      }
       setTimeout(() => { phase.value = 'bravo'; persistPhase('bravo') }, 600)
     } else {
       checkpointDelta.value -= 1
       pointsAnimation.value = { pts: -1, seq: pointsAnimation.value.seq + 1 }
-      await adjustPoints(_gid(), authStore.pseudo, -1)
-      await authStore.refreshTeam()
+      if (authStore.pseudo) {
+        await adjustPoints(_gid(), authStore.pseudo, -1)
+        await authStore.refreshTeam()
+      }
     }
     return correct
   }
@@ -282,9 +296,11 @@ export const useGameStore = defineStore('game', () => {
 
   const finishAllQuestions = async () => {
     const cp = currentCheckpoint.value
-    if (!cp || !authStore.pseudo) return
-    await updateTeamProgress(_gid(), authStore.pseudo, cp.id, { missionAnswer: 'completed' })
-    await authStore.refreshTeam()
+    if (!cp) return
+    if (authStore.pseudo) {
+      await updateTeamProgress(_gid(), authStore.pseudo, cp.id, { missionAnswer: 'completed' })
+      await authStore.refreshTeam()
+    }
     currentQuestionIndex.value = 0
     stage2Result.value = checkpointDelta.value >= 0 ? 'correct' : 'wrong'
     const nextIndex = authStore.team?.currentCheckpointIndex ?? 0
@@ -299,7 +315,7 @@ export const useGameStore = defineStore('game', () => {
 
   const applySkipCost = async () => {
     pointsAnimation.value = { pts: -SKIP_COST, seq: pointsAnimation.value.seq + 1 }
-    await adjustPoints(_gid(), authStore.pseudo, -SKIP_COST)
+    if (authStore.pseudo) await adjustPoints(_gid(), authStore.pseudo, -SKIP_COST)
   }
 
   const skipStage1 = async () => {
@@ -389,14 +405,18 @@ export const useGameStore = defineStore('game', () => {
       const pts = cp?.pointsCorrect ?? 5
       checkpointDelta.value += pts
       pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
-      await adjustPoints(_gid(), authStore.pseudo, pts)
-      await authStore.refreshTeam()
+      if (authStore.pseudo) {
+        await adjustPoints(_gid(), authStore.pseudo, pts)
+        await authStore.refreshTeam()
+      }
       setTimeout(() => { phase.value = 'bravo'; persistPhase('bravo') }, 600)
     } else {
       checkpointDelta.value -= 1
       pointsAnimation.value = { pts: -1, seq: pointsAnimation.value.seq + 1 }
-      await adjustPoints(_gid(), authStore.pseudo, -1)
-      await authStore.refreshTeam()
+      if (authStore.pseudo) {
+        await adjustPoints(_gid(), authStore.pseudo, -1)
+        await authStore.refreshTeam()
+      }
     }
     return correct
   }

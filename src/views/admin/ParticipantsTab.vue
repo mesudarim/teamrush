@@ -133,6 +133,73 @@ const importBulk = async () => {
   }
 }
 
+// ── Parcours (équipes avec route assignée) ────────────────────────────────────
+const routesView     = ref('list')
+const filterDateFrom = ref('')
+const filterDateTo   = ref('')
+const expandedTeam   = ref({})
+
+const cpNameMap = computed(() => {
+  const map = {}
+  admin.checkpoints.forEach(cp => { map[cp.id] = cp.title ?? cp.id })
+  return map
+})
+
+const teamRouteOrder = (team) => team.day1Order ?? []
+const teamRouteStart = (team) => team.startedAt
+
+const routeTeams = computed(() =>
+  [...admin.teams]
+    .filter(t => {
+      if (!teamRouteOrder(t).length) return false
+      const from = filterDateFrom.value
+      const to   = filterDateTo.value
+      if (!from && !to) return true
+      const d = teamRouteStart(t)?.toDate?.()
+      if (!d) return true
+      const ds = d.toISOString().slice(0, 10)
+      if (from && ds < from) return false
+      if (to   && ds > to)   return false
+      return true
+    })
+    .sort((a, b) => {
+      const ta = teamRouteStart(a)?.toDate?.()?.getTime() ?? 0
+      const tb = teamRouteStart(b)?.toDate?.()?.getTime() ?? 0
+      return ta - tb
+    })
+)
+
+const allRouteCpIds = computed(() => {
+  const seen = new Set()
+  const result = []
+  for (const team of routeTeams.value) {
+    for (const id of teamRouteOrder(team)) {
+      if (!seen.has(id)) { seen.add(id); result.push(id) }
+    }
+  }
+  return result
+})
+
+const fmtDatetime = (ts) => {
+  if (!ts) return '—'
+  const d = ts.toDate?.() ?? new Date(ts)
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) + ' ' +
+         d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+}
+
+const cpStatus = (team, cpId) => {
+  const completed = team.completedCheckpoints ?? []
+  const order     = teamRouteOrder(team)
+  if (!order.includes(cpId)) return null
+  if (completed.includes(cpId)) return 'done'
+  return order.find(id => !completed.includes(id)) === cpId ? 'current' : 'pending'
+}
+
+const cpPts = (cpId) => (admin.checkpoints.find(c => c.id === cpId)?.pointsCorrect ?? 0)
+
+const routeCompletedCount = (team) =>
+  teamRouteOrder(team).filter(id => (team.completedCheckpoints ?? []).includes(id)).length
+
 const confirmDelete = async () => {
   if (!confirmDeleteId.value) return
   await deleteParticipant(gid(), confirmDeleteId.value)
@@ -295,6 +362,125 @@ Mike Ben-David, mike@example.com, +972501234567"
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- ── Parcours des équipes ───────────────────────────────────────────────── -->
+    <div class="mt-10">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 class="section-title">🗺 Parcours assignés</h2>
+          <p class="text-slate-400 text-sm mt-0.5">
+            {{ routeTeams.length }} équipe{{ routeTeams.length > 1 ? 's' : '' }}
+            <template v-if="allRouteCpIds.length"> — {{ allRouteCpIds.length }} checkpoints</template>
+          </p>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <!-- Date range filter -->
+          <div class="flex items-center gap-1.5">
+            <input type="date" v-model="filterDateFrom"
+              class="bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500" />
+            <span class="text-slate-500 text-sm">→</span>
+            <input type="date" v-model="filterDateTo"
+              class="bg-slate-800 border border-slate-600 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500" />
+            <button v-if="filterDateFrom || filterDateTo"
+              @click="filterDateFrom = ''; filterDateTo = ''"
+              class="text-slate-400 hover:text-white text-sm px-2 py-2 rounded-lg hover:bg-slate-700 transition-colors">✕</button>
+          </div>
+          <!-- View toggle -->
+          <div class="flex gap-1 bg-slate-800/60 p-1 rounded-xl">
+            <button @click="routesView = 'list'"
+              :class="['px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors',
+                routesView === 'list' ? 'bg-amber-500 text-slate-900' : 'text-slate-400 hover:text-white']">
+              ☰ Liste</button>
+            <button @click="routesView = 'table'"
+              :class="['px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors',
+                routesView === 'table' ? 'bg-amber-500 text-slate-900' : 'text-slate-400 hover:text-white']">
+              ⊞ Tableau</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="routeTeams.length === 0" class="card text-center text-slate-500 py-10">
+        Aucune équipe avec un parcours assigné{{ filterDateFrom || filterDateTo ? ' sur cette période' : '' }}.
+      </div>
+
+      <template v-else>
+        <!-- LIST VIEW -->
+        <div v-if="routesView === 'list'" class="space-y-3">
+          <div v-for="team in routeTeams" :key="team.pseudo" class="card p-0 overflow-hidden">
+            <button
+              class="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-700/30 transition-colors text-start"
+              @click="expandedTeam[team.pseudo] = !expandedTeam[team.pseudo]"
+            >
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-bold text-white">{{ team.displayName || team.pseudo }}</span>
+                  <span :class="team.isFinished ? 'badge-green' : team.day1Finished ? 'badge-orange' : 'badge-blue'">
+                    {{ team.isFinished ? 'Terminé' : team.day1Finished ? 'J1 done' : 'En cours' }}
+                  </span>
+                </div>
+                <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-3 flex-wrap">
+                  <span>🕐 {{ fmtDatetime(teamRouteStart(team)) }}</span>
+                  <span>✅ {{ routeCompletedCount(team) }}/{{ teamRouteOrder(team).length }}</span>
+                  <span class="font-bold text-amber-400">{{ team.points ?? 0 }} pts</span>
+                </div>
+              </div>
+              <span class="text-slate-500 shrink-0 text-xs">{{ expandedTeam[team.pseudo] ? '▲' : '▼' }}</span>
+            </button>
+            <div v-if="expandedTeam[team.pseudo]" class="border-t border-slate-700/50 px-4 py-3 space-y-2">
+              <div v-for="(cpId, i) in teamRouteOrder(team)" :key="cpId" class="flex items-center gap-3">
+                <span class="text-slate-600 text-xs font-mono w-5 text-center shrink-0">{{ i + 1 }}</span>
+                <span class="text-lg shrink-0">
+                  {{ cpStatus(team, cpId) === 'done' ? '✅' : cpStatus(team, cpId) === 'current' ? '▶️' : '⬜' }}
+                </span>
+                <span :class="['flex-1 text-sm',
+                  cpStatus(team, cpId) === 'done'    ? 'text-green-400' :
+                  cpStatus(team, cpId) === 'current' ? 'text-amber-300 font-semibold' : 'text-slate-400']">
+                  {{ cpNameMap[cpId] ?? cpId }}
+                </span>
+                <span class="text-xs text-slate-500 shrink-0">+{{ cpPts(cpId) }} pts</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TABLE VIEW -->
+        <div v-else class="card overflow-x-auto p-0">
+          <table class="text-xs" style="min-width: max-content;">
+            <thead>
+              <tr class="border-b border-slate-700">
+                <th class="text-start px-4 py-3 text-slate-400 font-semibold sticky left-0 bg-slate-800 z-10 whitespace-nowrap">Équipe</th>
+                <th class="text-start px-4 py-3 text-slate-400 font-semibold whitespace-nowrap">🕐 Départ</th>
+                <th class="text-center px-4 py-3 text-slate-400 font-semibold">Pts</th>
+                <th v-for="cpId in allRouteCpIds" :key="cpId"
+                    class="text-center px-3 py-3 text-slate-400 font-semibold" style="max-width: 90px;">
+                  <div class="truncate" style="max-width: 80px;" :title="cpNameMap[cpId]">{{ cpNameMap[cpId] ?? cpId }}</div>
+                  <div class="text-slate-600 font-normal">+{{ cpPts(cpId) }}</div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="team in routeTeams" :key="team.pseudo"
+                  class="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors">
+                <td class="px-4 py-2.5 sticky left-0 bg-slate-800 z-10">
+                  <div class="font-semibold text-white whitespace-nowrap">{{ team.displayName || team.pseudo }}</div>
+                  <span :class="team.isFinished ? 'badge-green' : team.day1Finished ? 'badge-orange' : 'badge-blue'">
+                    {{ team.isFinished ? 'Terminé' : team.day1Finished ? 'J1 done' : 'En cours' }}
+                  </span>
+                </td>
+                <td class="px-4 py-2.5 text-slate-300 whitespace-nowrap">{{ fmtDatetime(teamRouteStart(team)) }}</td>
+                <td class="px-4 py-2.5 text-center font-black text-amber-400">{{ team.points ?? 0 }}</td>
+                <td v-for="cpId in allRouteCpIds" :key="cpId" class="px-3 py-2.5 text-center">
+                  <span v-if="cpStatus(team, cpId) === 'done'"    class="text-green-400 text-base">✅</span>
+                  <span v-else-if="cpStatus(team, cpId) === 'current'" class="text-amber-400 text-base">▶️</span>
+                  <span v-else-if="cpStatus(team, cpId) === 'pending'" class="text-slate-600 text-base">⬜</span>
+                  <span v-else class="text-slate-800">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
     </div>
 
     <ConfirmModal

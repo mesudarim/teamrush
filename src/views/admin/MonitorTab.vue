@@ -3,7 +3,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
-import { subscribeToPhotos, subscribeToAudioRecordings, resetTeamDay2, activateDay2 } from '@/firebase/firestore'
+import { subscribeToPhotos, subscribeToAudioRecordings, resetTeamDay2, activateDay2, markTeamFinished } from '@/firebase/firestore'
 import { ref as storageRef, getBlob } from 'firebase/storage'
 import { storage } from '@/firebase/config'
 import JSZip from 'jszip'
@@ -21,9 +21,9 @@ let recordingsUnsubscribe = null
 
 const downloadingPhotos = ref(false)
 const downloadProgress  = ref(0)
+const selectionMode     = ref(false)
+const selectedIds       = ref(new Set())
 
-// Extract the Firebase Storage path from a download URL.
-// Format: https://firebasestorage.googleapis.com/v0/b/BUCKET/o/ENCODED_PATH?alt=media&token=...
 const _storagePath = (url) => {
   try {
     const match = url.match(/\/o\/([^?]+)/)
@@ -31,18 +31,26 @@ const _storagePath = (url) => {
   } catch { return null }
 }
 
-const downloadAllPhotos = async () => {
-  if (!photos.value.length || downloadingPhotos.value) return
+const toggleSelect = (photo) => {
+  const s = new Set(selectedIds.value)
+  s.has(photo.id) ? s.delete(photo.id) : s.add(photo.id)
+  selectedIds.value = s
+}
+
+const selectAll = () => { selectedIds.value = new Set(photos.value.map(p => p.id)) }
+const clearSelection = () => { selectedIds.value = new Set() }
+const exitSelection = () => { selectionMode.value = false; clearSelection() }
+
+const _downloadPhotos = async (list) => {
+  if (!list.length || downloadingPhotos.value) return
   downloadingPhotos.value = true
   downloadProgress.value  = 0
   try {
     const zip   = new JSZip()
-    const total = photos.value.length
+    const total = list.length
     let done    = 0
-
-    for (const photo of photos.value) {
+    for (const photo of list) {
       const path = _storagePath(photo.url)
-      console.log(`[download] ${done + 1}/${total} path="${path}" url="${photo.url.slice(0, 80)}…"`)
       try {
         let blob
         if (path) {
@@ -57,7 +65,6 @@ const downloadAllPhotos = async () => {
         const team = (photo.teamName || photo.teamPseudo || 'equipe').replace(/[/\\?%*:|"<>]/g, '-')
         const cp   = (photo.checkpointTitle || '').replace(/[/\\?%*:|"<>]/g, '-')
         zip.file(`${String(done + 1).padStart(3, '0')}_${team}_${cp}.${ext}`, blob)
-        console.log(`[download] ✅ ok`)
       } catch (err) {
         console.error(`[download] ❌ failed:`, err.message)
       } finally {
@@ -65,7 +72,6 @@ const downloadAllPhotos = async () => {
         downloadProgress.value = Math.round((done / total) * 100)
       }
     }
-
     const content = await zip.generateAsync({ type: 'blob' })
     const a = document.createElement('a')
     a.href     = URL.createObjectURL(content)
@@ -77,6 +83,9 @@ const downloadAllPhotos = async () => {
     downloadProgress.value  = 0
   }
 }
+
+const downloadAllPhotos = () => _downloadPhotos(photos.value)
+const downloadSelected  = () => _downloadPhotos(photos.value.filter(p => selectedIds.value.has(p.id)))
 
 onMounted(() => {
   photosUnsubscribe    = subscribeToPhotos(gid(), (list) => { photos.value = list })
@@ -322,6 +331,21 @@ const day2Breakdown = (team) => {
 
 // ── RESET DAY 2 ───────────────────────────────────────────────────────────────
 const resetState = ref({})
+// Force-finish a team (sends them to the finished screen with current points)
+const finishState = ref({}) // pseudo → 'idle' | 'confirm' | 'loading'
+const askFinish     = (pseudo) => { finishState.value = { ...finishState.value, [pseudo]: 'confirm' } }
+const cancelFinish  = (pseudo) => { finishState.value = { ...finishState.value, [pseudo]: 'idle'    } }
+const confirmFinish = async (pseudo) => {
+  finishState.value = { ...finishState.value, [pseudo]: 'loading' }
+  try {
+    await markTeamFinished(gid(), pseudo)
+    finishState.value = { ...finishState.value, [pseudo]: 'idle' }
+  } catch (e) {
+    console.error(e)
+    finishState.value = { ...finishState.value, [pseudo]: 'idle' }
+  }
+}
+
 const askReset    = (pseudo) => { resetState.value = { ...resetState.value, [pseudo]: 'confirm' } }
 const cancelReset = (pseudo) => { resetState.value = { ...resetState.value, [pseudo]: 'idle'    } }
 const confirmReset = async (pseudo) => {
@@ -393,7 +417,7 @@ const confirmReset = async (pseudo) => {
     </div>
 
     <!-- ── Sub-tabs ─────────────────────────────────────────────────────────── -->
-    <div class="flex gap-1 mb-4 bg-slate-800/60 p-1 rounded-xl w-fit">
+    <div class="flex gap-1 mb-4 bg-slate-800/60 p-1 rounded-xl w-fit flex-wrap">
       <button
         v-for="tab in ['day1', 'day2', 'total']"
         :key="tab"
@@ -423,6 +447,7 @@ const confirmReset = async (pseudo) => {
             <th class="text-center px-4 py-3 text-slate-400 font-semibold">{{ t('admin.monitor.points') }}</th>
             <th class="text-center px-4 py-3 text-slate-400 font-semibold">{{ t('admin.monitor.elapsed') }}</th>
             <th class="text-center px-4 py-3 text-slate-400 font-semibold">{{ t('admin.monitor.status') }}</th>
+            <th class="text-center px-4 py-3 text-slate-400 font-semibold">Terminer</th>
           </tr>
         </thead>
         <tbody>
@@ -457,6 +482,19 @@ const confirmReset = async (pseudo) => {
               <span :class="team.isFinished ? 'badge-green' : team.day1Finished ? 'badge-orange' : 'badge-blue'">
                 {{ team.isFinished ? t('admin.monitor.finished') : team.day1Finished ? t('admin.monitor.day1done') : t('admin.monitor.active') }}
               </span>
+            </td>
+            <td class="px-4 py-3 text-center">
+              <span v-if="team.isFinished" class="text-slate-600 text-xs">✓</span>
+              <template v-else-if="!finishState[team.pseudo] || finishState[team.pseudo] === 'idle'">
+                <button @click="askFinish(team.pseudo)" class="text-xs px-2 py-1 rounded-lg border border-green-500/40 text-green-400 hover:bg-green-500/10 transition-colors">
+                  🏁 Fin
+                </button>
+              </template>
+              <div v-else-if="finishState[team.pseudo] === 'confirm'" class="flex items-center justify-center gap-1">
+                <button @click="confirmFinish(team.pseudo)" class="text-xs px-2 py-1 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold transition-colors">OK</button>
+                <button @click="cancelFinish(team.pseudo)" class="text-xs px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">✕</button>
+              </div>
+              <span v-else-if="finishState[team.pseudo] === 'loading'" class="text-xs text-slate-500 animate-pulse">…</span>
             </td>
           </tr>
           <tr v-if="sortedDay1.length === 0">
@@ -617,16 +655,43 @@ const confirmReset = async (pseudo) => {
           <h2 class="section-title">📷 {{ t('admin.monitor.photos') }}</h2>
           <span class="text-sm text-slate-400">{{ t('admin.monitor.photosCount', { n: photos.length }) }}</span>
         </div>
-        <button
-          v-if="photos.length > 0"
-          @click="downloadAllPhotos"
-          :disabled="downloadingPhotos"
-          class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-slate-600 text-slate-300 hover:border-amber-500/60 hover:text-amber-400 transition-colors disabled:opacity-50"
-        >
-          <span v-if="downloadingPhotos" class="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
-          <span v-else>⬇</span>
-          {{ downloadingPhotos ? `${downloadProgress}%` : `Tout télécharger (${photos.length})` }}
-        </button>
+        <div v-if="photos.length > 0" class="flex items-center gap-2">
+          <!-- Normal mode -->
+          <template v-if="!selectionMode">
+            <button
+              @click="selectionMode = true"
+              class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-slate-600 text-slate-300 hover:border-slate-400 hover:text-white transition-colors"
+            >
+              ☑ Sélectionner
+            </button>
+            <button
+              @click="downloadAllPhotos"
+              :disabled="downloadingPhotos"
+              class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-slate-600 text-slate-300 hover:border-amber-500/60 hover:text-amber-400 transition-colors disabled:opacity-50"
+            >
+              <span v-if="downloadingPhotos" class="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+              <span v-else>⬇</span>
+              {{ downloadingPhotos ? `${downloadProgress}%` : `Tout télécharger (${photos.length})` }}
+            </button>
+          </template>
+          <!-- Selection mode -->
+          <template v-else>
+            <span class="text-sm text-slate-400">{{ selectedIds.size }} sélectionnée(s)</span>
+            <button @click="selectedIds.size === photos.length ? clearSelection() : selectAll()" class="px-3 py-2 rounded-xl text-sm border border-slate-600 text-slate-300 hover:text-white transition-colors">
+              {{ selectedIds.size === photos.length ? 'Tout désélectionner' : 'Tout sélectionner' }}
+            </button>
+            <button
+              @click="downloadSelected"
+              :disabled="downloadingPhotos || selectedIds.size === 0"
+              class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-amber-500/50 text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+            >
+              <span v-if="downloadingPhotos" class="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+              <span v-else>⬇</span>
+              {{ downloadingPhotos ? `${downloadProgress}%` : `Télécharger (${selectedIds.size})` }}
+            </button>
+            <button @click="exitSelection" class="px-3 py-2 rounded-xl text-sm border border-slate-600 text-slate-400 hover:text-white transition-colors">Annuler</button>
+          </template>
+        </div>
       </div>
 
       <div v-if="photos.length === 0" class="card text-center text-slate-500 py-10">
@@ -637,10 +702,18 @@ const confirmReset = async (pseudo) => {
         <div
           v-for="photo in photos"
           :key="photo.id"
-          class="group relative aspect-square rounded-xl overflow-hidden border border-slate-700 bg-slate-800 cursor-pointer hover:border-amber-500/50 transition-colors"
-          @click="lightbox = photo"
+          class="group relative aspect-square rounded-xl overflow-hidden bg-slate-800 cursor-pointer transition-all"
+          :class="selectionMode && selectedIds.has(photo.id)
+            ? 'border-2 border-amber-400 ring-2 ring-amber-400/30'
+            : 'border border-slate-700 hover:border-amber-500/50'"
+          @click="selectionMode ? toggleSelect(photo) : (lightbox = photo)"
         >
           <img :src="photo.url" :alt="photo.teamName || photo.teamPseudo" class="w-full h-full object-cover" loading="lazy" />
+          <!-- Selection checkbox -->
+          <div v-if="selectionMode" class="absolute top-2 right-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors"
+            :class="selectedIds.has(photo.id) ? 'bg-amber-400 border-amber-400 text-slate-900' : 'bg-black/40 border-white/60 text-transparent'">
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+          </div>
           <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <p class="text-white text-xs font-bold truncate">{{ photo.teamName || photo.teamPseudo }}</p>
             <p class="text-slate-400 text-xs truncate">{{ photo.checkpointTitle }}</p>

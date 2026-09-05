@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useAdminStore } from '@/stores/admin'
-import { cleanOrphanTeams, getAdminEmails, saveAdminEmails, getCheckpoints } from '@/firebase/firestore'
+import { cleanOrphanTeams, getAdminEmails, saveAdminEmails, getCheckpoints, exportGameBackup, importGameBackup, skipAllTeamsToFinalCheckpoint } from '@/firebase/firestore'
 import { uploadGameLogo } from '@/firebase/storage'
 import QrCodeDisplay from '@/components/ui/QrCodeDisplay.vue'
 
@@ -73,8 +73,12 @@ const form = ref({
   tapiskeyword: '', tapiskeywordEn: '', tapisInstruction: '', tapisInstructionEn: '', tapisVideoUrl: '',
   tapiskeywordDay2: '', tapiskeywordEnDay2: '', tapisInstructionDay2: '', tapisInstructionEnDay2: '', tapisVideoUrlDay2: '',
   tapisManualEntry: false,
+  tapisQrBrand: '',
   preLaunchDay1Intro: '', preLaunchDay1IntroEn: '', preLaunchDay1Outro: '', preLaunchDay1OutroEn: '', preLaunchDay1Missions: [],
   preLaunchDay2Intro: '', preLaunchDay2IntroEn: '', preLaunchDay2Outro: '', preLaunchDay2OutroEn: '', preLaunchDay2Missions: [],
+  // ── Day 1 complete content ──────────────────────────────────────────────────
+  day1CompleteText: '',
+  day1CompleteTextEn: '',
 })
 
 const preLaunchDay = ref('1')
@@ -307,6 +311,7 @@ const savePaths = async () => {
   }
 }
 
+
 const save = async () => {
   saving.value = true
   try {
@@ -358,6 +363,22 @@ const saveAdminEmailsList = async () => {
   }
 }
 
+const skippingToFinal   = ref(false)
+const skipToFinalDone   = ref('')
+const confirmSkipFinal  = ref(false)
+
+const doSkipToFinal = async () => {
+  skippingToFinal.value = true
+  try {
+    const n = await skipAllTeamsToFinalCheckpoint(gid())
+    confirmSkipFinal.value = false
+    skipToFinalDone.value  = `✓ ${n} équipe(s) envoyée(s) au dernier checkpoint`
+    setTimeout(() => { skipToFinalDone.value = '' }, 5000)
+  } finally {
+    skippingToFinal.value = false
+  }
+}
+
 const doResetAll = async () => {
   resetting.value = true
   try {
@@ -367,6 +388,68 @@ const doResetAll = async () => {
     setTimeout(() => { resetDone.value = false }, 4000)
   } finally {
     resetting.value = false
+  }
+}
+
+// ── Backup / Restore ──────────────────────────────────────────────────────────
+const backupLoading  = ref(false)
+const restoreLoading = ref(false)
+const restoreMsg     = ref('')
+const restoreError   = ref('')
+const confirmRestore = ref(false)
+const pendingBackup  = ref(null)
+
+const doExport = async () => {
+  backupLoading.value = true
+  try {
+    const backup = await exportGameBackup(gid())
+    const json   = JSON.stringify(backup, null, 2)
+    const blob   = new Blob([json], { type: 'application/json' })
+    const url    = URL.createObjectURL(blob)
+    const a      = document.createElement('a')
+    const date   = new Date().toISOString().slice(0, 10)
+    a.href     = url
+    a.download = `teamrush-backup-${gid()}-${date}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  } finally {
+    backupLoading.value = false
+  }
+}
+
+const onRestoreFile = (e) => {
+  restoreError.value  = ''
+  restoreMsg.value    = ''
+  confirmRestore.value = false
+  const file = e.target.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result)
+      if (!data.gameId || !data.collections) { restoreError.value = 'Fichier invalide — ce n\'est pas un backup TeamRush.'; return }
+      pendingBackup.value  = data
+      confirmRestore.value = true
+    } catch { restoreError.value = 'Impossible de lire le fichier JSON.' }
+  }
+  reader.readAsText(file)
+  e.target.value = ''
+}
+
+const doRestore = async () => {
+  if (!pendingBackup.value) return
+  restoreLoading.value = true
+  restoreError.value   = ''
+  try {
+    await importGameBackup(gid(), pendingBackup.value)
+    restoreMsg.value     = `✓ Restauration terminée (exporté le ${pendingBackup.value.exportedAt?.slice(0, 10) ?? '?'})`
+    pendingBackup.value  = null
+    confirmRestore.value = false
+    setTimeout(() => { restoreMsg.value = '' }, 6000)
+  } catch (err) {
+    restoreError.value = 'Erreur lors de la restauration : ' + err.message
+  } finally {
+    restoreLoading.value = false
   }
 }
 </script>
@@ -870,6 +953,13 @@ const doResetAll = async () => {
         <div class="font-semibold text-slate-200 text-sm">🏁 {{ t('admin.settings.tapisTitle') }}</div>
         <p class="text-xs text-slate-400 leading-relaxed">{{ t('admin.settings.tapisDesc') }}</p>
 
+        <!-- QR card badge text -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.settings.tapisQrBrand') }}</label>
+          <input v-model="form.tapisQrBrand" class="input-field text-sm" placeholder="e.g. רמת דוד בת 100" />
+          <p class="text-xs text-slate-500 mt-1">{{ t('admin.settings.tapisQrBrandHint') }}</p>
+        </div>
+
         <!-- Manual entry toggle (for testing) — auto-saves immediately -->
         <label class="flex items-center gap-2 cursor-pointer w-fit">
           <input
@@ -927,7 +1017,7 @@ const doResetAll = async () => {
               {{ showTapisQr.day1 ? 'Masquer le QR' : 'Générer le QR code' }}
             </button>
             <div v-if="showTapisQr.day1" class="mt-3 flex justify-center">
-              <QrCodeDisplay :value="tapisQrValue(1)" label="Tapis-Jour1" brand="נופש רשות 2026" />
+              <QrCodeDisplay :value="tapisQrValue(1)" label="Tapis-Jour1" :title="form.appTitle" :brand="form.tapisQrBrand" />
             </div>
           </div>
         </div>
@@ -978,7 +1068,7 @@ const doResetAll = async () => {
               {{ showTapisQr.day2 ? 'Masquer le QR' : 'Générer le QR code' }}
             </button>
             <div v-if="showTapisQr.day2" class="mt-3 flex justify-center">
-              <QrCodeDisplay :value="tapisQrValue(2)" label="Tapis-Jour2" brand="נופש רשות 2026" />
+              <QrCodeDisplay :value="tapisQrValue(2)" label="Tapis-Jour2" :title="form.appTitle" :brand="form.tapisQrBrand" />
             </div>
           </div>
         </div>
@@ -1191,6 +1281,24 @@ const doResetAll = async () => {
         </template>
       </div>
 
+      <!-- ── Texte fin Jour 1 ───────────────────────────────────────────────── -->
+      <div class="border-t border-slate-700 pt-5 space-y-3">
+        <div>
+          <h3 class="text-sm font-bold text-white mb-1">🎉 {{ t('admin.settings.day1Complete.title') }}</h3>
+          <p class="text-xs text-slate-500">{{ t('admin.settings.day1Complete.desc') }}</p>
+        </div>
+        <div class="grid md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.settings.day1Complete.textLabel') }} (עברית)</label>
+            <textarea v-model="form.day1CompleteText" rows="5" class="input-field resize-none text-sm" :placeholder="t('admin.settings.day1Complete.textPlaceholder')" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1">{{ t('admin.settings.day1Complete.textLabel') }} (English)</label>
+            <textarea v-model="form.day1CompleteTextEn" rows="5" class="input-field resize-none text-sm" :placeholder="t('admin.settings.day1Complete.textPlaceholderEn')" />
+          </div>
+        </div>
+      </div>
+
       <Transition name="saved">
         <div v-if="saved" class="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-green-400 text-sm font-semibold">
           ✅ {{ t('admin.settings.saved') }}
@@ -1244,6 +1352,64 @@ const doResetAll = async () => {
       <div v-else class="text-xs text-slate-500">{{ t('common.loading') }}</div>
     </div>
 
+    <!-- Backup / Restore -->
+    <div class="mt-8 border border-blue-500/30 rounded-xl p-5 bg-blue-500/5 space-y-4">
+      <div class="flex items-center gap-2 font-bold text-blue-300 text-base">
+        <span>💾</span> Sauvegarde &amp; Restauration
+      </div>
+
+      <p class="text-sm text-slate-400 leading-relaxed">
+        Télécharge un fichier JSON complet de la base de données (checkpoints, paramètres, parcours, équipes).
+        Conserve ce fichier en lieu sûr — il permet de tout restaurer en cas de problème.
+      </p>
+
+      <!-- Export -->
+      <button
+        @click="doExport"
+        :disabled="backupLoading"
+        class="w-full py-3 rounded-xl font-bold text-sm border border-blue-500/50 text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+      >
+        {{ backupLoading ? 'Préparation...' : '⬇️ Télécharger la sauvegarde' }}
+      </button>
+
+      <!-- Restore -->
+      <div class="border-t border-blue-500/20 pt-4 space-y-3">
+        <p class="text-sm text-slate-400">
+          Pour restaurer, charge un fichier de sauvegarde. <strong class="text-amber-400">Attention :</strong> cela écrase les données actuelles.
+        </p>
+
+        <label class="block w-full py-3 rounded-xl font-bold text-sm border border-slate-600 text-slate-300 bg-slate-800/60 hover:bg-slate-700 transition-colors cursor-pointer text-center">
+          ⬆️ Charger un fichier de sauvegarde
+          <input type="file" accept=".json" class="hidden" @change="onRestoreFile" />
+        </label>
+
+        <Transition name="saved">
+          <div v-if="restoreError" class="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">{{ restoreError }}</div>
+        </Transition>
+        <Transition name="saved">
+          <div v-if="restoreMsg" class="p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-green-400 text-sm font-semibold">{{ restoreMsg }}</div>
+        </Transition>
+
+        <!-- Confirm restore -->
+        <div v-if="confirmRestore && pendingBackup" class="p-4 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-3">
+          <p class="text-amber-300 font-semibold text-sm">
+            Fichier du {{ pendingBackup.exportedAt?.slice(0, 10) }} — contient :
+            {{ Object.keys(pendingBackup.collections?.checkpoints ?? {}).length }} checkpoints,
+            {{ Object.keys(pendingBackup.collections?.teams ?? {}).length }} équipes.
+          </p>
+          <p class="text-slate-400 text-xs">Cette opération va écraser les données actuelles du jeu <strong class="text-white">{{ gid() }}</strong>. Confirmes-tu ?</p>
+          <div class="flex gap-2">
+            <button @click="confirmRestore = false; pendingBackup = null" class="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">
+              Annuler
+            </button>
+            <button @click="doRestore" :disabled="restoreLoading" class="flex-1 py-2.5 rounded-xl text-sm font-bold bg-amber-600 hover:bg-amber-500 text-white transition-colors disabled:opacity-50">
+              {{ restoreLoading ? 'Restauration...' : 'Confirmer la restauration' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Danger Zone -->
     <div class="mt-8 border border-red-500/40 rounded-xl p-5 bg-red-500/5 space-y-4">
       <div class="flex items-center gap-2 font-bold text-red-400 text-base">
@@ -1267,6 +1433,33 @@ const doResetAll = async () => {
         >
           {{ cleaning ? t('common.loading') : '🧹 ' + t('admin.settings.cleanOrphans') }}
         </button>
+      </div>
+
+      <!-- Skip all to final checkpoint -->
+      <div class="border-t border-red-500/20 pt-4 space-y-2">
+        <div class="text-sm text-slate-400 leading-relaxed">
+          Envoie immédiatement toutes les équipes au dernier checkpoint (fin de parcours), quelle que soit leur position actuelle.
+        </div>
+        <Transition name="saved">
+          <div v-if="skipToFinalDone" class="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-green-400 text-sm font-semibold">
+            {{ skipToFinalDone }}
+          </div>
+        </Transition>
+        <button v-if="!confirmSkipFinal" @click="confirmSkipFinal = true"
+          class="w-full py-3 rounded-xl font-bold text-sm border border-orange-500/50 text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 transition-colors">
+          🏁 Envoyer tout le monde au dernier checkpoint
+        </button>
+        <div v-else class="space-y-3">
+          <p class="text-orange-400 font-semibold text-sm text-center">Toutes les équipes passeront directement au dernier checkpoint. Confirmer ?</p>
+          <div class="flex gap-2">
+            <button @click="confirmSkipFinal = false" class="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-slate-600 text-slate-300 hover:bg-slate-700 transition-colors">
+              Annuler
+            </button>
+            <button @click="doSkipToFinal" :disabled="skippingToFinal" class="flex-1 py-2.5 rounded-xl text-sm font-bold bg-orange-600 hover:bg-orange-500 text-white transition-colors disabled:opacity-50">
+              {{ skippingToFinal ? 'En cours...' : 'Confirmer' }}
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="border-t border-red-500/20 pt-4 text-sm text-slate-400 leading-relaxed">

@@ -1,13 +1,18 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useGameStore } from '@/stores/game'
 import { useAuthStore } from '@/stores/auth'
+import { useGameContextStore } from '@/stores/gameContext'
 import { useSound } from '@/composables/useSound'
+import { getSettings } from '@/firebase/firestore'
 
+const { t, locale } = useI18n()
 const router = useRouter()
 const game = useGameStore()
 const auth = useAuthStore()
+const gameCtx = useGameContextStore()
 const { playEndOfGame } = useSound()
 
 const goHome = async () => {
@@ -15,6 +20,14 @@ const goHome = async () => {
   await auth.logoutAndSetInactive()
   router.push({ name: 'Login' })
 }
+
+// ── Settings (configurable content) ──────────────────────────────────────────
+const settings = ref({})
+const day1Text = computed(() => {
+  const en = settings.value.day1CompleteTextEn
+  const he = settings.value.day1CompleteText
+  return (locale.value === 'en' && en) ? en : (he || en || '')
+})
 
 // ── Confetti ──────────────────────────────────────────────────────────────────
 const confettiPieces = Array.from({ length: 60 }, (_, i) => ({
@@ -26,18 +39,6 @@ const confettiPieces = Array.from({ length: 60 }, (_, i) => ({
   size: 6 + Math.random() * 10,
   rotate: Math.random() * 360,
 }))
-
-const activities = [
-  { emoji: '♦', text: 'תחנה שבה כולם חייבים לעבור: דוכני האקסטרים!' },
-  { emoji: '♦', text: 'עמדת איפור וצמות' },
-  { emoji: '♦', text: 'מתחם בועות סבון' },
-  { emoji: '♦', text: 'עמדות ג\'אגלינג' },
-  { emoji: '♦', text: 'עמדות משחק לנוער' },
-  { emoji: '♦', text: 'קעקועים' },
-  { emoji: '♦', text: 'ציורי גוף זוהרים' },
-  { emoji: '♦', text: 'עמדת טיקטוק מסתובבת' },
-  { emoji: '♦', text: 'והפתעות נוספות...' },
-]
 
 // ── Points breakdown ──────────────────────────────────────────────────────────
 const day1BonusPts = computed(() => auth.team?.day1BonusPoints ?? 0)
@@ -80,13 +81,14 @@ const startBonusAnimation = () => {
 const showCongrats = ref(true)
 let flashTimer = null
 let bonusTimer  = null
-onMounted(() => {
+onMounted(async () => {
   game.finishingGame = false   // Remove the bridging overlay from GameView
   playEndOfGame()
   flashTimer = setTimeout(() => {
     showCongrats.value = false
     bonusTimer = setTimeout(startBonusAnimation, 600)
   }, 2500)
+  settings.value = await getSettings(gameCtx.gameId)
 })
 onUnmounted(() => {
   clearTimeout(flashTimer)
@@ -122,10 +124,10 @@ onUnmounted(() => {
            class="absolute inset-0 flex flex-col items-center justify-center z-20 px-6 text-center bg-slate-900/80 backdrop-blur-sm">
         <div class="text-8xl mb-4" style="animation: pop 0.5s cubic-bezier(0.34,1.56,0.64,1);">🎉</div>
         <h1 class="text-4xl font-black text-amber-400 mb-2" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-          כל הכבוד!
+          {{ t('game.day1complete.flashTitle') }}
         </h1>
         <p class="text-white text-xl font-bold" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-          סיימתם את החלק הראשון!
+          {{ t('game.day1complete.flashSubtitle') }}
         </p>
       </div>
     </Transition>
@@ -138,7 +140,7 @@ onUnmounted(() => {
         <div class="text-center space-y-2">
           <div class="text-5xl">🎉</div>
           <h1 class="text-2xl font-bold text-shimmer leading-snug" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-weight: 700;">
-            כל הכבוד! סיימתם בהצלחה את החלק הראשון של המשחק!
+            {{ t('game.day1complete.headerTitle') }}
             <span class="ms-1">🎉</span>
           </h1>
         </div>
@@ -151,106 +153,39 @@ onUnmounted(() => {
         <!-- Score breakdown — receipt style -->
         <div class="bg-slate-900/60 rounded-2xl border border-slate-700 overflow-hidden">
           <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-            <span class="text-slate-400 text-sm">🎯 נקודות שאלות</span>
+            <span class="text-slate-400 text-sm">🎯 {{ t('game.day1complete.questionPoints') }}</span>
             <span class="font-bold text-green-400 tabular-nums text-lg">+{{ questionPts }}</span>
           </div>
           <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-            <span class="text-slate-400 text-sm">⏱ זמן כולל</span>
+            <span class="text-slate-400 text-sm">⏱ {{ t('game.day1complete.totalTime') }}</span>
             <span class="font-bold text-blue-400 tabular-nums text-lg">{{ game.formatTime(game.elapsedSeconds) }}</span>
           </div>
           <div class="flex items-center justify-between px-4 py-3 border-b border-amber-500/30 bg-amber-500/5">
-            <span class="text-amber-300/80 text-sm">⚡ בונוס זמן</span>
+            <span class="text-amber-300/80 text-sm">⚡ {{ t('game.day1complete.timeBonus') }}</span>
             <div class="flex items-center gap-1.5">
               <span class="font-bold text-amber-400 tabular-nums text-lg">+{{ displayBonus }}</span>
               <span class="text-base">🪙</span>
             </div>
           </div>
           <div class="flex items-center justify-between px-4 py-4 bg-amber-500/10">
-            <span class="text-amber-300 font-bold text-sm">⭐ סה"כ נקודות יום 1</span>
+            <span class="text-amber-300 font-bold text-sm">⭐ {{ t('game.day1complete.totalPointsLabel') }}</span>
             <span class="text-3xl font-bold text-amber-400 tabular-nums">{{ totalPts }}</span>
           </div>
         </div>
 
         <!-- Leaderboard button -->
         <button @click="$router.push({ name: 'Leaderboard' })" class="btn-primary w-full py-4 text-base font-bold">
-          טבלת דירוג 📊
+          {{ t('game.day1complete.leaderboardBtn') }} 📊
         </button>
 
-        <!-- Intro text -->
-        <div class="card-glow text-center space-y-2 py-4">
-          <p class="text-white font-bold text-lg leading-relaxed" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-            ההרפתקה ממש לא נגמרת כאן,<br>עכשיו הזמן ליהנות ולחגוג!
-          </p>
-          <p class="text-slate-300 text-base" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-            הנה המשך הלו"ז המטורף שמחכה לכם להמשך היום:
-          </p>
-        </div>
-
-        <!-- Schedule -->
-        <div class="space-y-3">
-          <div class="flex items-center gap-3 p-4 rounded-2xl bg-orange-500/10 border border-orange-500/30">
-            <span class="text-3xl">🍗</span>
-            <div>
-              <div class="font-black text-orange-300 text-base" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-                החל מהשעה 18:00
-              </div>
-              <div class="text-white font-bold" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-                נפגשים לחגיגת BBQ ענקית!
-              </div>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-3 p-4 rounded-2xl bg-pink-500/10 border border-pink-500/30">
-            <span class="text-3xl">🎈</span>
-            <div>
-              <div class="font-black text-pink-300 text-base" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-                החל מהשעה 19:30
-              </div>
-              <div class="text-white font-bold" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-                כל העמדות והפעילויות נפתחות!
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Activities -->
-        <div class="card space-y-3">
-          <div class="flex items-center gap-2">
-            <span>✨</span>
-            <h2 class="font-black text-white text-base" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-              התוכנית שלנו להערב
-            </h2>
-          </div>
-          <p class="text-slate-400 text-xs" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">רחבת הבריכה &amp; אמפי המלון | קומה G</p>
-
-          <div class="space-y-2">
-            <div
-              v-for="(a, i) in activities" :key="i"
-              class="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-              :class="i === 0 ? 'bg-amber-500/20 border border-amber-500/40' : 'bg-slate-800/60'"
-            >
-              <span :class="i === 0 ? 'text-amber-400' : 'text-slate-500'" class="text-sm">♦</span>
-              <span
-                :class="i === 0 ? 'text-amber-300 font-bold' : 'text-slate-200'"
-                class="text-sm"
-                style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;"
-              >
-                {{ a.text }}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="text-center py-4">
-          <p class="text-white font-black text-xl" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-            צאו ליהנות, מגיע לכם! 🙌
-          </p>
+        <!-- Admin-configurable text -->
+        <div v-if="day1Text" class="rounded-2xl bg-slate-800/60 border border-slate-700 px-5 py-5">
+          <p class="text-slate-200 text-base leading-relaxed whitespace-pre-line text-center">{{ day1Text }}</p>
         </div>
 
         <!-- Home button -->
         <button @click="goHome" class="w-full py-3.5 rounded-2xl font-bold text-sm border border-slate-600 text-slate-300 bg-slate-800/60 hover:bg-slate-700 active:scale-[0.97] transition-all" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-          🏠 חזרה לדף הבית
+          🏠 {{ t('game.day1complete.homeBtn') }}
         </button>
 
       </div>

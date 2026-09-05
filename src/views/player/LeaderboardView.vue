@@ -4,13 +4,18 @@ import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
 import { useLeaderboardStore } from '@/stores/leaderboard'
 import { useAuthStore } from '@/stores/auth'
+import { useGameContextStore } from '@/stores/gameContext'
+import { getSettings } from '@/firebase/firestore'
 import PlayerNav from '@/components/layout/PlayerNav.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const route  = useRoute()
-const lb   = useLeaderboardStore()
-const auth = useAuthStore()
+const lb      = useLeaderboardStore()
+const auth    = useAuthStore()
+const gameCtx = useGameContextStore()
+
+const completionText = ref('')
 
 // 'day1' | 'day2' | 'total' — caller can pre-select via ?tab=day2
 const VALID_TABS = new Set(['day1', 'day2', 'total'])
@@ -30,7 +35,13 @@ const pointsFor = (team) => {
   return lb.day1PointsFor(team)
 }
 
-onMounted(() => lb.subscribe())
+onMounted(async () => {
+  lb.subscribe()
+  const s = await getSettings(gameCtx.gameId)
+  completionText.value = locale.value === 'he'
+    ? (s?.day1CompleteText || s?.day1CompleteTextEn || '')
+    : (s?.day1CompleteTextEn || s?.day1CompleteText || '')
+})
 onUnmounted(() => lb.cleanup())
 </script>
 
@@ -93,6 +104,7 @@ onUnmounted(() => lb.cleanup())
       <div v-else class="space-y-2">
         <div
           v-for="(team, idx) in displayedTeams"
+
           :key="team.id"
           :class="[
             'flex items-center gap-4 p-4 rounded-2xl border transition-all',
@@ -153,6 +165,12 @@ onUnmounted(() => lb.cleanup())
           </div>
         </div>
       </div>
+
+      <!-- Completion text from admin settings -->
+      <div v-if="completionText" class="mt-8 p-5 rounded-2xl bg-slate-800 border border-slate-700 text-slate-200 text-sm leading-relaxed whitespace-pre-wrap text-center">
+        {{ completionText }}
+      </div>
+
     </div>
   </div>
 </template>

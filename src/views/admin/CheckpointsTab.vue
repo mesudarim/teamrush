@@ -10,10 +10,20 @@ import PuzzleCropper from '@/components/ui/PuzzleCropper.vue'
 import ImageEditor from '@/components/ui/ImageEditor.vue'
 import FreeCropper from '@/components/ui/FreeCropper.vue'
 import { uploadMissingWordImage } from '@/firebase/storage'
+import { updateCheckpoint } from '@/firebase/firestore'
 
 const { t } = useI18n()
 const admin   = useAdminStore()
 const gameCtx = useGameContextStore()
+const gid = () => gameCtx.gameId
+
+const toggleUniversal = async (cp) => {
+  await updateCheckpoint(gid(), cp.id, { isUniversal: !cp.isUniversal })
+}
+
+const openPreview = (cp) => {
+  window.open(`/g/${gid()}/cp-preview/${cp.id}`, '_blank')
+}
 
 const showForm = ref(false)
 const editingId = ref(null)
@@ -263,6 +273,26 @@ const deleteCheckpoint = async () => {
   confirmDeleteId.value = null
 }
 
+const orphanPreview  = ref(null)  // null=hidden, []=none found, [{id,zoneId,zoneName},...]
+const cleanupLoading = ref(false)
+const cleanupDone    = ref('')
+
+const previewCleanup = async () => {
+  cleanupLoading.value = true
+  cleanupDone.value    = ''
+  orphanPreview.value  = await admin.findOrphanedIds()
+  cleanupLoading.value = false
+}
+
+const confirmCleanup = async () => {
+  cleanupLoading.value = true
+  const n = await admin.cleanupOrphanedIds()
+  orphanPreview.value  = null
+  cleanupLoading.value = false
+  cleanupDone.value    = n > 0 ? `✓ ${n} supprimé(s)` : '✓ Rien à nettoyer'
+  setTimeout(() => { cleanupDone.value = '' }, 4000)
+}
+
 // Question helpers
 const addQuestion = () => {
   form.value.missionConfig.questions.push(emptyQuestion())
@@ -444,6 +474,37 @@ const stageModeLabel = (cp) => {
         <button @click="startCreate" class="btn-primary py-2 px-4 text-sm">
           + {{ t('admin.checkpoints.create') }}
         </button>
+        <button @click="previewCleanup" :disabled="cleanupLoading" class="btn-ghost py-2 px-3 text-xs text-slate-400 hover:text-amber-400" title="Vérifier les IDs orphelins dans le routing open mode">
+          {{ cleanupLoading ? '...' : cleanupDone || '🧹' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Orphan cleanup preview -->
+    <div v-if="orphanPreview !== null" class="mx-4 mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+      <div v-if="orphanPreview.length === 0" class="flex items-center justify-between">
+        <span class="text-green-400">✓ Aucun ID orphelin trouvé dans le routing open mode.</span>
+        <button @click="orphanPreview = null" class="text-slate-400 hover:text-white px-2">✕</button>
+      </div>
+      <div v-else>
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-semibold text-amber-400">{{ orphanPreview.length }} ID(s) orphelin(s) à supprimer :</span>
+          <button @click="orphanPreview = null" class="text-slate-400 hover:text-white px-2">✕</button>
+        </div>
+        <ul class="mb-4 space-y-1">
+          <li v-for="o in orphanPreview" :key="o.id" class="text-slate-300">
+            <span class="font-mono text-xs text-slate-500">{{ o.id }}</span>
+            <span class="text-slate-500 mx-1">—</span>
+            <span class="text-xs text-slate-400">zone : {{ o.zoneName }}</span>
+          </li>
+        </ul>
+        <p class="text-slate-400 text-xs mb-3">Ces checkpoints ont été supprimés mais leur ID reste dans la configuration du routing. Ils seront retirés de la liste des zones.</p>
+        <div class="flex gap-2">
+          <button @click="confirmCleanup" :disabled="cleanupLoading" class="btn-danger py-1.5 px-4 text-sm">
+            {{ cleanupLoading ? '...' : 'Supprimer' }}
+          </button>
+          <button @click="orphanPreview = null" class="btn-ghost py-1.5 px-4 text-sm">Annuler</button>
+        </div>
       </div>
     </div>
 
@@ -497,6 +558,17 @@ const stageModeLabel = (cp) => {
             class="flex-1 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white text-xs font-semibold py-1.5 px-3 rounded-xl transition-colors">
             {{ t('admin.checkpoints.edit') }}
           </button>
+          <button
+            @click="openPreview(cp)"
+            :title="t('admin.checkpoints.preview')"
+            class="border border-slate-600 text-slate-400 hover:text-blue-400 hover:border-blue-500/50 text-xs py-1.5 px-2.5 rounded-xl transition-colors"
+          >🔬</button>
+          <button
+            @click="toggleUniversal(cp)"
+            :title="cp.isUniversal ? t('admin.checkpoints.universalOn') : t('admin.checkpoints.universalOff')"
+            :class="cp.isUniversal ? 'bg-amber-500/20 border-amber-500/60 text-amber-400' : 'border-slate-600 text-slate-500 hover:text-amber-400'"
+            class="border text-xs py-1.5 px-2.5 rounded-xl transition-colors"
+          >⭐</button>
           <button @click="confirmDeleteId = cp.id" class="btn-danger text-xs py-1.5 px-3">✕</button>
         </div>
       </div>
@@ -550,6 +622,17 @@ const stageModeLabel = (cp) => {
             </td>
             <td class="px-4 py-2.5">
               <div class="flex gap-2 justify-end">
+                <button
+                  @click="openPreview(cp)"
+                  :title="t('admin.checkpoints.preview')"
+                  class="border border-slate-600 text-slate-400 hover:text-blue-400 hover:border-blue-500/50 text-xs py-1 px-2 rounded-lg transition-colors"
+                >🔬</button>
+                <button
+                  @click="toggleUniversal(cp)"
+                  :title="cp.isUniversal ? t('admin.checkpoints.universalOn') : t('admin.checkpoints.universalOff')"
+                  :class="cp.isUniversal ? 'bg-amber-500/20 border-amber-500/60 text-amber-400' : 'border-slate-600 text-slate-500 hover:text-amber-400'"
+                  class="border text-xs py-1 px-2 rounded-lg transition-colors"
+                >⭐</button>
                 <button @click="startEdit(cp)"
                   class="bg-green-600 hover:bg-green-500 text-white text-xs font-semibold py-1 px-3 rounded-lg transition-colors">
                   {{ t('admin.checkpoints.edit') }}

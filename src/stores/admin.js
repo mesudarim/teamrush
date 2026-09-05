@@ -65,12 +65,23 @@ export const useAdminStore = defineStore('admin', () => {
 
   const removeCheckpoint = async (id) => {
     const gid = _gid()
+    // Remove from track mode routes
     for (const track of tracks.value) {
       if (track.checkpointIds?.includes(id)) {
         await updateTrack(gid, track.id, {
           checkpointIds: track.checkpointIds.filter((cid) => cid !== id),
         })
       }
+    }
+    // Remove from open mode routing zones
+    const settings = await getSettings(gid)
+    const routing  = settings?.openModeRouting
+    if (routing?.zones?.some(z => z.checkpointIds?.includes(id))) {
+      const updatedZones = routing.zones.map(z => ({
+        ...z,
+        checkpointIds: (z.checkpointIds ?? []).filter(cid => cid !== id),
+      }))
+      await updateSettings(gid, { openModeRouting: { ...routing, zones: updatedZones } })
     }
     await deleteCheckpoint(gid, id)
   }
@@ -108,6 +119,42 @@ export const useAdminStore = defineStore('admin', () => {
     await resetAllTeams(_gid())
   }
 
+  const findOrphanedIds = async () => {
+    const gid = _gid()
+    const settings = await getSettings(gid)
+    const routing  = settings?.openModeRouting
+    if (!routing?.zones) return []
+    const existingIds = new Set(checkpoints.value.map(cp => cp.id))
+    const orphans = []
+    for (const z of routing.zones) {
+      for (const id of (z.checkpointIds ?? [])) {
+        if (!existingIds.has(id)) {
+          orphans.push({ id, zoneId: z.id, zoneName: z.name || z.id })
+        }
+      }
+    }
+    return orphans
+  }
+
+  const cleanupOrphanedIds = async () => {
+    const gid = _gid()
+    const settings = await getSettings(gid)
+    const routing  = settings?.openModeRouting
+    if (!routing?.zones) return 0
+    const existingIds = new Set(checkpoints.value.map(cp => cp.id))
+    let removed = 0
+    const updatedZones = routing.zones.map(z => {
+      const before = z.checkpointIds ?? []
+      const after  = before.filter(id => existingIds.has(id))
+      removed += before.length - after.length
+      return { ...z, checkpointIds: after }
+    })
+    if (removed > 0) {
+      await updateSettings(gid, { openModeRouting: { ...routing, zones: updatedZones } })
+    }
+    return removed
+  }
+
   const cleanup = () => {
     unsubs.forEach((u) => u())
     unsubs = []
@@ -116,6 +163,6 @@ export const useAdminStore = defineStore('admin', () => {
   return {
     checkpoints, tracks, teams, settings, isLoading,
     init, saveCheckpoint, removeCheckpoint, saveTrack, removeTrack,
-    saveSettings, resetAll, cleanup, loadSettings,
+    saveSettings, resetAll, cleanup, loadSettings, findOrphanedIds, cleanupOrphanedIds,
   }
 })

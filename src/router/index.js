@@ -56,6 +56,11 @@ const routes = [
     meta: { guest: true, verifMode: true },
   },
   {
+    path: '/g/:gameId/cp-preview/:cpId',
+    name: 'CheckpointPreview',
+    component: () => import('@/views/admin/CheckpointPreviewView.vue'),
+  },
+  {
     path: '/g/:gameId/resultats',
     name: 'Day1Results',
     component: () => import('@/views/player/ResultsView.vue'),

@@ -4,7 +4,8 @@ import { ref, watch, onMounted } from 'vue'
 const props = defineProps({
   value: { type: String, default: '' },
   label: { type: String, default: '' },
-  brand: { type: String, default: 'נופש רשות 2026' },
+  title: { type: String, default: '' },
+  brand: { type: String, default: '' },
 })
 
 const canvasEl = ref(null)
@@ -94,7 +95,7 @@ const download = async () => {
   ctx.shadowColor  = 'rgba(100,50,0,0.7)'
   ctx.shadowOffsetY = 3
   ctx.shadowBlur    = 10
-  ctx.fillText('המירוץ לצפון', W / 2, BAND + 34)
+  ctx.fillText(props.title || '', W / 2, BAND + 34)
   ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0; ctx.shadowBlur = 0
 
   // ── QR code (white rounded card) ──
@@ -174,8 +175,8 @@ const download = async () => {
       <div class="relative z-20 flex flex-col items-center pt-12 pb-12 px-4 gap-3">
 
         <!-- Top label -->
-        <div class="text-center">
-          <span class="qr-label">המירוץ לצפון</span>
+        <div v-if="title" class="text-center">
+          <span class="qr-label">{{ title }}</span>
         </div>
 
         <!-- QR code on white background -->

@@ -176,7 +176,7 @@ const submitMulti = () => {
         <p class="text-sm font-bold text-slate-200 text-center">{{ t('game.stage1.multiFieldOrderTitle') }}</p>
         <p class="text-xs text-slate-400 text-center">{{ t('game.stage1.multiFieldOrderHint') }}</p>
 
-        <div class="flex flex-wrap gap-2 justify-center py-2 min-h-[52px]">
+        <div class="flex flex-col gap-2 py-2">
           <button
             v-for="(item, i) in orderItems"
             :key="i"

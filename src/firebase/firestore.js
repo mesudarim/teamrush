@@ -33,6 +33,7 @@ import {
   arrayUnion,
   writeBatch,
   deleteField,
+  runTransaction,
 } from 'firebase/firestore'
 import { db } from './config'
 
@@ -269,6 +270,38 @@ export const resetAllTeams = async (gameId) => {
     })
     await batch.commit()
   }
+
+  // Reset path counter so next team starts at path 0
+  await setDoc(doc(db, 'games', gameId, 'counters', 'pathIndex'), { value: -1 })
+}
+
+export const skipAllTeamsToFinalCheckpoint = async (gameId) => {
+  const teamsSnap = await getDocs(gcol(gameId, 'teams'))
+  const BATCH_SIZE = 400
+  const ops = []
+  teamsSnap.forEach(d => {
+    const team  = d.data()
+    if (team.isFinished) return
+    const day   = team.day ?? 1
+    const order = (day === 2 ? team.day2Order : team.day1Order) ?? []
+    if (!order.length) return
+    ops.push({
+      ref: d.ref,
+      data: {
+        currentCheckpointIndex: order.length - 1,
+        currentPhase: 'envelope1',
+        savedQuestionIndex: 0,
+        isFinished: false,
+        updatedAt: serverTimestamp(),
+      },
+    })
+  })
+  for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db)
+    ops.slice(i, i + BATCH_SIZE).forEach(({ ref, data }) => batch.update(ref, data))
+    await batch.commit()
+  }
+  return ops.length
 }
 
 export const resetTeamProgress = async (gameId, pseudo, trackId) => {
@@ -297,6 +330,20 @@ export const saveTeamPhase = async (gameId, pseudo, phase, questionIndex = 0) =>
 export const saveTeamDayOrder = async (gameId, pseudo, day, order) => {
   const field = day === 2 ? 'day2Order' : 'day1Order'
   await updateDoc(gdoc(gameId, 'teams', pseudo), { [field]: order })
+}
+
+// Atomic round-robin path counter stored in counters/pathIndex (open write — no Firebase Auth needed).
+export const claimNextPathIndex = async (gameId, pathCount) => {
+  if (!pathCount || pathCount <= 0) return 0
+  const ref = doc(db, 'games', gameId, 'counters', 'pathIndex')
+  let chosen = 0
+  await runTransaction(db, async (tx) => {
+    const snap    = await tx.get(ref)
+    const current = snap.exists() ? (snap.data()?.value ?? -1) : -1
+    chosen        = (current + 1) % pathCount
+    snap.exists() ? tx.update(ref, { value: chosen }) : tx.set(ref, { value: chosen })
+  })
+  return chosen
 }
 
 export const setPreLaunchDone = async (gameId, pseudo, day = 1) => {
@@ -604,4 +651,41 @@ export const getAdminEmails = async (gameId) => {
 
 export const saveAdminEmails = async (gameId, emails) => {
   await setDoc(doc(db, 'games', gameId, 'config', 'adminEmails'), { emails })
+}
+
+// ─── Backup / Restore ─────────────────────────────────────────────────────────
+
+const BACKUP_COLLECTIONS = ['checkpoints', 'tracks', 'settings', 'config', 'teams']
+
+export const exportGameBackup = async (gameId) => {
+  const gameSnap = await getDoc(doc(db, 'games', gameId))
+  const backup = {
+    exportedAt: new Date().toISOString(),
+    gameId,
+    gameDoc: gameSnap.exists() ? gameSnap.data() : {},
+    collections: {},
+  }
+  for (const col of BACKUP_COLLECTIONS) {
+    const snaps = await getDocs(collection(db, 'games', gameId, col))
+    backup.collections[col] = {}
+    snaps.forEach(d => { backup.collections[col][d.id] = d.data() })
+  }
+  return backup
+}
+
+export const importGameBackup = async (gameId, backup) => {
+  const batch = writeBatch(db)
+  // Restore game root document
+  if (backup.gameDoc && Object.keys(backup.gameDoc).length > 0) {
+    batch.set(doc(db, 'games', gameId), backup.gameDoc, { merge: true })
+  }
+  // Restore each collection (skip teams — live game state, restore optional)
+  const cols = backup.collections ?? {}
+  for (const col of BACKUP_COLLECTIONS) {
+    if (!cols[col]) continue
+    for (const [docId, data] of Object.entries(cols[col])) {
+      batch.set(doc(db, 'games', gameId, col, docId), data)
+    }
+  }
+  await batch.commit()
 }

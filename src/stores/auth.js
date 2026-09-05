@@ -54,8 +54,8 @@ export const useAuthStore = defineStore('auth', () => {
     isLoading.value = true
     error.value = null
     const gid = _gameId()
-    const slug = chosenPseudo.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_\-]/g, '')
-    if (!slug) { error.value = 'INVALID_PSEUDO'; isLoading.value = false; return false }
+    const slug = chosenPseudo.trim().replace(/\s+/g, '_').replace(/\//g, '')
+    if (!slug || slug === '.' || slug === '..') { error.value = 'INVALID_PSEUDO'; isLoading.value = false; return false }
     try {
       // createTeam handles both new teams and returning players with the same pseudo
       team.value = await createTeam(gid, slug, '', chosenPseudo.trim(), null, day, isVerif)
