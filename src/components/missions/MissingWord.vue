@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseMission from './BaseMission.vue'
 import { useSound } from '@/composables/useSound'
+import { useCachedImage } from '@/composables/useCachedImage'
 
 const { t, locale } = useI18n()
 const { playCorrect, playWrong } = useSound()
@@ -25,7 +26,8 @@ const questionText = computed(() =>
     : props.question.question ?? ''
 )
 
-const imageUrl = computed(() => props.question.imageUrl ?? '')
+const imageUrl    = computed(() => props.question.imageUrl ?? '')
+const imageSrc    = useCachedImage(imageUrl)
 
 // Case-insensitive, whitespace-tolerant comparison
 const isMatch = (input) => {
@@ -57,7 +59,7 @@ const submit = () => {
       <!-- Clue image -->
       <div v-if="imageUrl" class="rounded-2xl overflow-hidden border border-slate-700 bg-slate-900">
         <img
-          :src="imageUrl"
+          :src="imageSrc"
           class="w-full object-cover"
           style="max-height: 280px; object-position: center;"
         />

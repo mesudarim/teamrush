@@ -131,7 +131,7 @@ export const findParticipantByIdentifier = async (gameId, query_) => {
 
 // ─── Teams ────────────────────────────────────────────────────────────────────
 
-export const createTeam = async (gameId, pseudo, trackId, displayName = '', participant = null, day = 1, isVerif = false) => {
+export const createTeam = async (gameId, pseudo, trackId, displayName = '', participant = null, day = 1, isVerif = false, phone = '') => {
   const ref = gdoc(gameId, 'teams', pseudo)
   const existing = await getDoc(ref)
 
@@ -145,7 +145,7 @@ export const createTeam = async (gameId, pseudo, trackId, displayName = '', part
       if (day === 2 && existingData.day === 2 && existingData.isFinished) throw new Error('DAY2_ALREADY_FINISHED')
     }
 
-    const updateData = { displayName, isVerif: !!isVerif, updatedAt: serverTimestamp() }
+    const updateData = { displayName, isVerif: !!isVerif, updatedAt: serverTimestamp(), ...(phone ? { phone } : {}) }
 
     if (participant?.day1Order?.length && !existingData.day1Order?.length) {
       updateData.day1Order = participant.day1Order
@@ -176,6 +176,7 @@ export const createTeam = async (gameId, pseudo, trackId, displayName = '', part
     completedCheckpoints: [],
     isFinished: false,
     ...(isVerif ? { isVerif: true } : {}),
+    ...(phone ? { phone } : {}),
   }
 
   if (participant?.day1Order?.length) {

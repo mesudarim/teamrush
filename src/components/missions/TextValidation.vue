@@ -127,7 +127,7 @@ const playCoinSound = () => {
 
 // ── Submit ────────────────────────────────────────────────────────────────────
 
-const submit = async () => {
+const submit = () => {
   if (!answer.value.trim() || solved.value) return
 
   if (checkAnswer(answer.value)) {
@@ -138,7 +138,7 @@ const submit = async () => {
     if (timerEnabled.value && remaining.value > 0) {
       bonusEarned.value = remaining.value
       playCoinSound()
-      await game.awardBonus(remaining.value)
+      game.awardBonus(remaining.value)
     }
 
     playCorrect()
@@ -155,7 +155,8 @@ const submit = async () => {
 </script>
 
 <template>
-  <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false">
+  <BaseMission :checkpoint="checkpoint" :config="config" :show-title="false"
+               :instruction-override="(timerEnabled && !missionStarted) ? '' : null">
     <div class="space-y-5">
 
       <!-- ── Pre-start screen (timed missions only) ── -->
@@ -170,7 +171,7 @@ const submit = async () => {
           <!-- Max bonus at stake — visually prominent -->
           <div class="rounded-2xl bg-amber-500/10 border border-amber-500/40 px-5 py-4 space-y-1">
             <div class="text-amber-400 font-black tabular-nums" style="font-size: clamp(2rem, 12vw, 3.5rem);">
-              +{{ timerTotal }}
+              {{ timerTotal }}+
             </div>
             <div class="text-amber-300 text-xs font-semibold tracking-wide uppercase">
               {{ t('missions.textValidation.timedMaxBonus') }}

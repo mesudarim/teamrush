@@ -1,25 +1,28 @@
 <script setup>
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useLeaderboardStore } from '@/stores/leaderboard'
+import { useGameContextStore } from '@/stores/gameContext'
 
 const props = defineProps({
   mode: { type: String, default: 'day1' }, // 'day1' | 'day2' | 'total'
 })
 
-const lb = useLeaderboardStore()
+const lb      = useLeaderboardStore()
+const gameCtx = useGameContextStore()
+
+const gameName = computed(() => gameCtx.gameName || gameCtx.appTitle || '')
 
 // ── Config per mode ───────────────────────────────────────────────────────────
 const config = computed(() => ({
-  day1:  { title: 'תוצאות יום 1',  subtitle: 'תוצאות סופיות · מירוץ לצפון',     icon: '🏆' },
-  day2:  { title: 'תוצאות יום 2',  subtitle: 'ניקוד יום 2 · מירוץ לצפון',        icon: '🎯' },
-  total: { title: 'דירוג כולל',    subtitle: 'יום 1 + יום 2 · מירוץ לצפון',      icon: '⭐' },
+  day1:  { title: lb.isTwoDay ? 'תוצאות יום 1' : 'תוצאות', subtitle: gameName.value ? `תוצאות סופיות · ${gameName.value}` : 'תוצאות סופיות', icon: '🏆' },
+  day2:  { title: 'תוצאות יום 2',  subtitle: gameName.value ? `ניקוד יום 2 · ${gameName.value}`   : 'ניקוד יום 2',   icon: '🎯' },
+  total: { title: 'דירוג כולל',    subtitle: gameName.value ? `יום 1 + יום 2 · ${gameName.value}` : 'יום 1 + יום 2', icon: '⭐' },
 })[props.mode])
 
 // ── Teams to display ──────────────────────────────────────────────────────────
 const rankedTeams = computed(() => {
   if (props.mode === 'day1')
-    // Include teams that finished Day 1 OR have a Day 1 points snapshot
-    return lb.rankedTeamsDay1.filter(t => t.day1Finished || t.day1Points != null)
+    return lb.rankedTeamsDay1.filter(t => t.day1Finished || t.day1Points != null || t.isFinished)
   if (props.mode === 'day2')
     return lb.rankedTeamsDay2.filter(t => t.preLaunchDay2Done || t.isFinished)
   // total: anyone who finished (day 2 end) or has data for both days
@@ -36,7 +39,7 @@ const pointsFor = (team) => {
 const elapsedFor = (team) => {
   if (props.mode === 'day1') {
     const s = team.startedAt?.toDate?.()
-    const e = team.day1FinishedAt?.toDate?.()
+    const e = team.day1FinishedAt?.toDate?.() ?? (team.isFinished ? team.finishedAt?.toDate?.() : null)
     if (!s || !e) return 0
     return Math.floor((e - s) / 1000)
   }
@@ -116,7 +119,7 @@ onUnmounted(() => lb.cleanup())
                 <div class="text-slate-200 font-black text-xl tabular-nums">
                   {{ pointsFor(podiumTeams[1]) }}
                 </div>
-                <div class="text-slate-500 text-xs">{{ formatTime(elapsedFor(podiumTeams[1])) }}</div>
+                <div v-if="elapsedFor(podiumTeams[1])" class="text-slate-400 text-xs tabular-nums mt-0.5">⏱ {{ formatTime(elapsedFor(podiumTeams[1])) }}</div>
               </div>
               <div class="bg-slate-600 w-full rounded-t-xl h-16 flex items-center justify-center">
                 <span class="font-black text-slate-300 text-xl">2</span>
@@ -134,7 +137,7 @@ onUnmounted(() => lb.cleanup())
                 <div class="text-amber-400 font-black text-2xl tabular-nums">
                   {{ pointsFor(podiumTeams[0]) }}
                 </div>
-                <div class="text-slate-400 text-xs">{{ formatTime(elapsedFor(podiumTeams[0])) }}</div>
+                <div v-if="elapsedFor(podiumTeams[0])" class="text-amber-300/60 text-xs tabular-nums mt-0.5">⏱ {{ formatTime(elapsedFor(podiumTeams[0])) }}</div>
               </div>
               <div class="bg-amber-500 w-full rounded-t-xl h-24 flex items-center justify-center">
                 <span class="font-black text-slate-900 text-2xl">1</span>
@@ -152,7 +155,7 @@ onUnmounted(() => lb.cleanup())
                 <div class="text-slate-200 font-black text-xl tabular-nums">
                   {{ pointsFor(podiumTeams[2]) }}
                 </div>
-                <div class="text-slate-500 text-xs">{{ formatTime(elapsedFor(podiumTeams[2])) }}</div>
+                <div v-if="elapsedFor(podiumTeams[2])" class="text-slate-400 text-xs tabular-nums mt-0.5">⏱ {{ formatTime(elapsedFor(podiumTeams[2])) }}</div>
               </div>
               <div class="bg-amber-700/60 w-full rounded-t-xl h-10 flex items-center justify-center">
                 <span class="font-black text-amber-200 text-xl">3</span>
@@ -191,27 +194,28 @@ onUnmounted(() => lb.cleanup())
               {{ idx < 3 ? medals[idx] : idx + 1 }}
             </div>
 
-            <!-- Name + sub-info -->
+            <!-- Name -->
             <div class="flex-1 min-w-0">
               <div class="font-bold text-white truncate"
                    style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
                 {{ team.displayName || team.pseudo }}
               </div>
-              <!-- Total mode: show day breakdown -->
               <div v-if="props.mode === 'total'" class="text-xs text-slate-500 mt-0.5">
                 יום 1: {{ lb.day1PointsFor(team) }} · יום 2: {{ lb.day2PointsFor(team) }}
               </div>
-              <div v-else class="text-xs text-slate-500 tabular-nums mt-0.5">
-                {{ formatTime(elapsedFor(team)) }}
-              </div>
             </div>
 
-            <!-- Points -->
-            <div :class="[
-              'font-black text-xl tabular-nums shrink-0',
-              idx === 0 ? 'text-amber-400' : 'text-slate-200'
-            ]" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
-              {{ pointsFor(team) }}
+            <!-- Points + time -->
+            <div class="flex flex-col items-end shrink-0">
+              <div :class="[
+                'font-black text-xl tabular-nums leading-tight',
+                idx === 0 ? 'text-amber-400' : 'text-slate-200'
+              ]" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
+                {{ pointsFor(team) }}
+              </div>
+              <div v-if="elapsedFor(team)" class="text-xs text-slate-400 tabular-nums mt-0.5">
+                ⏱ {{ formatTime(elapsedFor(team)) }}
+              </div>
             </div>
           </div>
         </div>

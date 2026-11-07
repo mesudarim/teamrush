@@ -8,6 +8,7 @@ import {
 } from '@/firebase/firestore'
 import { useAuthStore } from './auth'
 import { useGameContextStore } from './gameContext'
+import { precacheCheckpoints } from '@/utils/imageCache'
 
 export const useGameStore = defineStore('game', () => {
   const authStore = useAuthStore()
@@ -151,6 +152,9 @@ export const useGameStore = defineStore('game', () => {
       }
       if (!checkpoints.value.length) throw new Error('No checkpoints found')
 
+      // Pre-cache all checkpoint images in the background (non-blocking)
+      precacheCheckpoints(checkpoints.value).catch(() => {})
+
       await loadCurrentCheckpoint()
 
       if (authStore.pseudo) {
@@ -249,17 +253,17 @@ export const useGameStore = defineStore('game', () => {
       const pts = cp?.pointsCorrect ?? 5
       checkpointDelta.value += pts
       pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
-      if (authStore.pseudo) {
-        await adjustPoints(_gid(), authStore.pseudo, pts)
-        await authStore.refreshTeam()
-      }
       setTimeout(() => { phase.value = 'bravo'; persistPhase('bravo') }, 600)
+      if (authStore.pseudo) {
+        adjustPoints(_gid(), authStore.pseudo, pts).catch(() => {})
+        authStore.patchTeamLocally({ points: (authStore.team?.points ?? 0) + pts })
+      }
     } else {
       checkpointDelta.value -= 1
       pointsAnimation.value = { pts: -1, seq: pointsAnimation.value.seq + 1 }
       if (authStore.pseudo) {
-        await adjustPoints(_gid(), authStore.pseudo, -1)
-        await authStore.refreshTeam()
+        adjustPoints(_gid(), authStore.pseudo, -1).catch(() => {})
+        authStore.patchTeamLocally({ points: (authStore.team?.points ?? 0) - 1 })
       }
     }
     return correct
@@ -267,17 +271,17 @@ export const useGameStore = defineStore('game', () => {
 
   const advanceToBravo = () => { phase.value = 'envelope2'; persistPhase('envelope2') }
 
-  const awardBonus = async (pts) => {
+  const awardBonus = (pts) => {
     if (!pts || !authStore.pseudo) return
     checkpointDelta.value += pts
     pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
-    await adjustPoints(_gid(), authStore.pseudo, pts)
-    await authStore.refreshTeam()
+    adjustPoints(_gid(), authStore.pseudo, pts).catch(() => {})
+    authStore.patchTeamLocally({ points: (authStore.team?.points ?? 0) + pts })
   }
 
   const openEnvelope2 = () => { phase.value = 'stage2'; persistPhase('stage2', 0) }
 
-  const answerQuestion = async (isCorrect, bonusPoints = 0) => {
+  const answerQuestion = (isCorrect, bonusPoints = 0) => {
     const cp = currentCheckpoint.value
     if (!cp) return
     const pts = isCorrect ? (cp.pointsCorrect ?? 5) + bonusPoints : -(cp.pointsWrong ?? 1)
@@ -285,8 +289,8 @@ export const useGameStore = defineStore('game', () => {
     pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
     checkpointDelta.value += pts
     if (!authStore.pseudo) return
-    await adjustPoints(_gid(), authStore.pseudo, pts)
-    await authStore.refreshTeam()
+    adjustPoints(_gid(), authStore.pseudo, pts).catch(() => {})
+    authStore.patchTeamLocally({ points: (authStore.team?.points ?? 0) + pts })
   }
 
   const advanceQuestion = () => {
@@ -298,8 +302,12 @@ export const useGameStore = defineStore('game', () => {
     const cp = currentCheckpoint.value
     if (!cp) return
     if (authStore.pseudo) {
-      await updateTeamProgress(_gid(), authStore.pseudo, cp.id, { missionAnswer: 'completed' })
-      await authStore.refreshTeam()
+      updateTeamProgress(_gid(), authStore.pseudo, cp.id, { missionAnswer: 'completed' }).catch(() => {})
+      authStore.patchTeamLocally({
+        currentCheckpointIndex: (authStore.team?.currentCheckpointIndex ?? 0) + 1,
+        currentPhase: null,
+        savedQuestionIndex: 0,
+      })
     }
     currentQuestionIndex.value = 0
     stage2Result.value = checkpointDelta.value >= 0 ? 'correct' : 'wrong'
@@ -328,7 +336,11 @@ export const useGameStore = defineStore('game', () => {
     const cp = currentCheckpoint.value
     if (!cp || !authStore.pseudo) return
     await applySkipCost()
-    await updateTeamProgress(_gid(), authStore.pseudo, cp.id)
+    updateTeamProgress(_gid(), authStore.pseudo, cp.id).catch(() => {})
+    authStore.patchTeamLocally({
+      currentCheckpointIndex: (authStore.team?.currentCheckpointIndex ?? 0) + 1,
+      currentPhase: null,
+    })
     currentQuestionIndex.value = 0
     await advanceToNext()
   }
@@ -336,7 +348,6 @@ export const useGameStore = defineStore('game', () => {
   const advanceToNext = async () => {
     error.value = null
     try {
-      await authStore.refreshTeam()
       const nextIndex  = authStore.team?.currentCheckpointIndex ?? 0
       if (nextIndex >= checkpoints.value.length) {
         const currentDay = authStore.team?.day ?? 1
@@ -368,12 +379,12 @@ export const useGameStore = defineStore('game', () => {
     const currentDay    = authStore.team?.day ?? 1
     const hasDay2Route  = (authStore.team?.day2Order?.length ?? 0) > 0
     if (currentDay === 1 && authStore.team?.day1Order?.length && hasDay2Route) {
-      await markDay1Complete(gid, authStore.pseudo, bonus)
-      await authStore.refreshTeam()
+      markDay1Complete(gid, authStore.pseudo, bonus).catch(() => {})
+      authStore.patchTeamLocally({ day1Finished: true, currentPhase: 'day1complete' })
       phase.value = 'day1complete'
     } else {
-      await markTeamFinished(gid, authStore.pseudo, bonus)
-      await authStore.refreshTeam()
+      markTeamFinished(gid, authStore.pseudo, bonus).catch(() => {})
+      authStore.patchTeamLocally({ isFinished: true, currentPhase: 'finished' })
       phase.value = 'finished'
     }
   }
@@ -405,17 +416,17 @@ export const useGameStore = defineStore('game', () => {
       const pts = cp?.pointsCorrect ?? 5
       checkpointDelta.value += pts
       pointsAnimation.value = { pts, seq: pointsAnimation.value.seq + 1 }
-      if (authStore.pseudo) {
-        await adjustPoints(_gid(), authStore.pseudo, pts)
-        await authStore.refreshTeam()
-      }
       setTimeout(() => { phase.value = 'bravo'; persistPhase('bravo') }, 600)
+      if (authStore.pseudo) {
+        adjustPoints(_gid(), authStore.pseudo, pts).catch(() => {})
+        authStore.patchTeamLocally({ points: (authStore.team?.points ?? 0) + pts })
+      }
     } else {
       checkpointDelta.value -= 1
       pointsAnimation.value = { pts: -1, seq: pointsAnimation.value.seq + 1 }
       if (authStore.pseudo) {
-        await adjustPoints(_gid(), authStore.pseudo, -1)
-        await authStore.refreshTeam()
+        adjustPoints(_gid(), authStore.pseudo, -1).catch(() => {})
+        authStore.patchTeamLocally({ points: (authStore.team?.points ?? 0) - 1 })
       }
     }
     return correct

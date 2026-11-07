@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseMission from './BaseMission.vue'
 import { useSound } from '@/composables/useSound'
+import { useCachedImage } from '@/composables/useCachedImage'
 
 const { t } = useI18n()
 const { playCorrect } = useSound()
@@ -23,7 +24,8 @@ const solved   = ref(false)
 const completed = ref(false)
 const failed    = ref(false)
 
-const imageUrl = computed(() => props.config?.puzzleImageUrl ?? '')
+const imageUrl  = computed(() => props.config?.puzzleImageUrl ?? '')
+const imageSrc  = useCachedImage(imageUrl)
 
 // bgPosition for a piece: its image index determines which 1/3 of the image
 const bgPos = (pieceIndex) => {
@@ -129,7 +131,7 @@ const movesOverHalf = computed(() => count.value > MAX_MOVES * 0.75)
           class="w-full rounded-2xl overflow-hidden border-4 border-green-500"
           style="aspect-ratio:1; box-shadow: 0 0 0 4px rgba(34,197,94,0.4);"
         >
-          <img :src="imageUrl" class="w-full h-full object-cover" />
+          <img :src="imageSrc" class="w-full h-full object-cover" />
         </div>
 
         <!-- Active puzzle grid -->
@@ -144,7 +146,7 @@ const movesOverHalf = computed(() => count.value > MAX_MOVES * 0.75)
             class="relative cursor-pointer transition-transform duration-100 active:scale-95"
             :class="{ 'brightness-125 ring-2 ring-amber-400 ring-inset z-10': selected === cellIdx }"
             :style="{
-              backgroundImage: 'url(' + imageUrl + ')',
+              backgroundImage: imageSrc ? 'url(' + imageSrc + ')' : '',
               backgroundSize: '300% 300%',
               backgroundPosition: bgPos(piece),
             }"

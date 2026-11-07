@@ -196,6 +196,7 @@ const startCreate = () => {
   stage1ImageBlob.value = null
   stage1ImageEditorSrc.value = ''
   showForm.value = true
+  scrollToForm()
 }
 
 const startEdit = (cp) => {
@@ -228,7 +229,15 @@ const startEdit = (cp) => {
   stage1ImageBlob.value = null
   stage1ImageEditorSrc.value = ''
   showForm.value = true
+  scrollToForm()
 }
+
+const formRef = ref(null)
+const scrollToForm = () => nextTick(() => {
+  if (!formRef.value) return
+  const y = formRef.value.getBoundingClientRect().top + window.scrollY - 130
+  window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
+})
 
 const cancelForm = () => { showForm.value = false; editingId.value = null }
 
@@ -320,7 +329,7 @@ const viewMode = ref(localStorage.getItem('cp_view') ?? 'card')
 const setView = (v) => { viewMode.value = v; localStorage.setItem('cp_view', v) }
 
 // ── Section collapse state ────────────────────────────────────────────────────
-const sections = ref({ nameDesc: true, envelope: false, validation: true, mission: true, points: true })
+const sections = ref({ nameDesc: true, map: true, envelope: false, validation: true, mission: true, points: true })
 const toggle = (key) => { sections.value[key] = !sections.value[key] }
 
 // ── Overview map ──────────────────────────────────────────────────────────────
@@ -683,7 +692,7 @@ const stageModeLabel = (cp) => {
 
     <!-- Checkpoint form -->
     <Transition name="slide-down">
-      <div v-if="showForm" class="max-w-3xl space-y-4">
+      <div v-if="showForm" ref="formRef" class="max-w-3xl space-y-4">
 
         <!-- ── En-tête du formulaire ── -->
         <div class="card-glow flex items-center justify-between py-3 px-5">
@@ -717,11 +726,12 @@ const stageModeLabel = (cp) => {
           <button type="button" @click="toggle('nameDesc')" class="w-full flex items-center justify-between gap-2 px-5 py-3 bg-slate-800 hover:bg-slate-700/80 transition-colors text-start">
             <div class="flex items-center gap-2">
               <span>📝</span>
-              <h3 class="text-xs font-black text-amber-400 uppercase tracking-wider">{{ t('admin.checkpoints.sectionName') }} / {{ t('admin.checkpoints.sectionDescription') }}</h3>
+              <h3 class="text-xs font-black text-amber-400 uppercase tracking-wider">{{ t('admin.checkpoints.sectionName') }} / {{ t('admin.checkpoints.sectionSettings') }}</h3>
             </div>
             <svg class="w-4 h-4 text-slate-400 transition-transform shrink-0" :class="sections.nameDesc ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div v-show="sections.nameDesc" class="bg-slate-800/40 p-5 space-y-4">
+            <!-- Titre -->
             <div class="grid md:grid-cols-2 gap-4">
               <div>
                 <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.titleField') }} *</label>
@@ -732,128 +742,70 @@ const stageModeLabel = (cp) => {
                 <input v-model="form.titleEn" class="input-field" />
               </div>
             </div>
-            <div class="grid md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.description') }}</label>
-                <textarea v-model="form.description" rows="2" class="input-field resize-none" />
+            <!-- Settings (description + vidéo) -->
+            <div class="border-t border-slate-700/60 pt-4 space-y-4">
+              <div class="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.description') }}</label>
+                  <textarea v-model="form.description" rows="2" class="input-field resize-none" />
+                </div>
+                <div>
+                  <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.descriptionEn') }}</label>
+                  <textarea v-model="form.descriptionEn" rows="2" class="input-field resize-none" />
+                </div>
               </div>
-              <div>
-                <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.descriptionEn') }}</label>
-                <textarea v-model="form.descriptionEn" rows="2" class="input-field resize-none" />
+              <label class="flex items-center gap-3 cursor-pointer select-none">
+                <div @click="form.showVideo = !form.showVideo"
+                  :class="['relative w-11 h-6 rounded-full transition-colors', form.showVideo ? 'bg-amber-500' : 'bg-slate-600']">
+                  <div :class="['absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform', form.showVideo ? 'translate-x-5' : 'translate-x-0']" />
+                </div>
+                <span class="text-sm font-semibold text-slate-300">{{ t('admin.checkpoints.showVideo') }}</span>
+              </label>
+              <div v-if="form.showVideo">
+                <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.youtubeUrl') }}</label>
+                <input v-model="form.youtubeUrl" class="input-field" placeholder="https://youtube.com/..." />
               </div>
-            </div>
-            <label class="flex items-center gap-3 cursor-pointer select-none">
-              <div @click="form.showVideo = !form.showVideo"
-                :class="['relative w-11 h-6 rounded-full transition-colors', form.showVideo ? 'bg-amber-500' : 'bg-slate-600']">
-                <div :class="['absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform', form.showVideo ? 'translate-x-5' : 'translate-x-0']" />
-              </div>
-              <span class="text-sm font-semibold text-slate-300">{{ t('admin.checkpoints.showVideo') }}</span>
-            </label>
-            <div v-if="form.showVideo">
-              <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.youtubeUrl') }}</label>
-              <input v-model="form.youtubeUrl" class="input-field" placeholder="https://youtube.com/..." />
             </div>
           </div>
         </div>
 
         <!-- ══════════════════════════════════════════════════════
-             CARTE 2 — Enveloppes — Texte d'affichage
+             CARTE 2 — Carte / Map
         ══════════════════════════════════════════════════════ -->
         <div class="rounded-2xl border border-slate-700 overflow-hidden">
-          <button type="button" @click="toggle('envelope')" class="w-full flex items-center justify-between gap-2 px-5 py-3 bg-slate-800 hover:bg-slate-700/80 transition-colors text-start">
+          <button type="button" @click="toggle('map')" class="w-full flex items-center justify-between gap-2 px-5 py-3 bg-slate-800 hover:bg-slate-700/80 transition-colors text-start">
             <div class="flex items-center gap-2">
-              <span>✉️</span>
-              <h3 class="text-xs font-black text-amber-400 uppercase tracking-wider">{{ t('admin.checkpoints.envelopeSection') }}</h3>
+              <span>🗺️</span>
+              <h3 class="text-xs font-black text-amber-400 uppercase tracking-wider">{{ t('admin.checkpoints.sectionMap') }}</h3>
             </div>
-            <svg class="w-4 h-4 text-slate-400 transition-transform shrink-0" :class="sections.envelope ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            <svg class="w-4 h-4 text-slate-400 transition-transform shrink-0" :class="sections.map ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
-          <div v-show="sections.envelope" class="bg-slate-800/40 p-5 space-y-5">
-
-            <!-- Carte (optionnelle) -->
-            <div class="space-y-3">
-              <label class="flex items-center gap-3 cursor-pointer select-none">
-                <div @click="form.showMap = !form.showMap"
-                  :class="['relative w-11 h-6 rounded-full transition-colors', form.showMap ? 'bg-blue-500' : 'bg-slate-600']">
-                  <div :class="['absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform', form.showMap ? 'translate-x-5' : 'translate-x-0']" />
-                </div>
-                <span class="text-sm font-semibold text-slate-300">{{ t('admin.checkpoints.showMap') }}</span>
-                <span class="text-xs text-slate-500">{{ t('admin.checkpoints.showMapHint') }}</span>
-              </label>
-              <template v-if="form.showMap">
-                <div class="flex gap-3">
-                  <button v-for="type in ['coordinates', 'image']" :key="type" @click="form.mapType = type"
-                    :class="['px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-colors', form.mapType === type ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-slate-600 bg-slate-700 text-slate-400']">
-                    {{ type === 'coordinates' ? t('admin.checkpoints.mapTypeCoords') : t('admin.checkpoints.mapTypeImage') }}
-                  </button>
-                </div>
-                <div v-if="form.mapType === 'coordinates'">
-                  <MapPicker :lat="form.mapLat" :lng="form.mapLng" :zoom="form.mapZoom" :tileType="form.mapTileType"
-                    @update:lat="form.mapLat = $event" @update:lng="form.mapLng = $event" @update:zoom="form.mapZoom = $event" @update:tileType="form.mapTileType = $event" />
-                </div>
-                <div v-else>
-                  <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.mapImage') }}</label>
-                  <input type="file" accept="image/*" @change="onImageChange" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-500/20 file:text-blue-400 hover:file:bg-blue-500/30 cursor-pointer" />
-                  <img v-if="imagePreview" :src="imagePreview" class="mt-2 w-full max-h-40 object-contain rounded-lg bg-slate-900" />
-                </div>
-              </template>
-            </div>
-
-            <div class="border-t border-slate-700/60 pt-4 space-y-4">
-              <p class="text-xs text-slate-500">{{ t('admin.checkpoints.envelopeSectionHint') }}</p>
-              <div class="grid md:grid-cols-3 gap-4">
-                <div>
-                  <label class="block text-sm font-semibold text-slate-300 mb-1">
-                    {{ t('admin.checkpoints.envelopeBrand') }}
-                    <span class="text-xs text-slate-500 font-normal ms-1">(défaut : nom du jeu)</span>
-                  </label>
-                  <input v-model="form.envelopeBrand" class="input-field text-center font-mono tracking-widest"
-                    :placeholder="gameCtx.gameName || 'המירוץ לצפון'" />
-                </div>
-                <div>
-                  <label class="block text-sm font-semibold text-amber-400 mb-1">{{ t('admin.checkpoints.envelope1Label') }}</label>
-                  <input v-model="form.envelope1Label" class="input-field text-center font-black text-lg" placeholder="יעד" />
-                </div>
-                <div>
-                  <label class="block text-sm font-semibold text-amber-400 mb-1">{{ t('admin.checkpoints.envelope2Label') }}</label>
-                  <input v-model="form.envelope2Label" class="input-field text-center font-black text-lg" placeholder="משימה" />
-                </div>
+          <div v-show="sections.map" class="bg-slate-800/40 p-5 space-y-3">
+            <label class="flex items-center gap-3 cursor-pointer select-none">
+              <div @click="form.showMap = !form.showMap"
+                :class="['relative w-11 h-6 rounded-full transition-colors', form.showMap ? 'bg-blue-500' : 'bg-slate-600']">
+                <div :class="['absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform', form.showMap ? 'translate-x-5' : 'translate-x-0']" />
               </div>
-              <!-- Aperçu live -->
-              <div class="flex gap-4 justify-center">
-                <div v-for="(lbl, i) in [form.envelope1Label || 'יעד', form.envelope2Label || 'משימה']" :key="i"
-                     class="rounded-xl overflow-hidden shadow-xl flex-1 max-w-[180px]"
-                     style="aspect-ratio: 1.9 / 1; position: relative;">
-                  <div class="absolute inset-0" style="background: radial-gradient(ellipse at 50% 35%, #3d72d8 0%, #1e4dbf 35%, #0e2e90 65%, #071a60 100%);" />
-                  <div class="absolute top-0 left-0 right-0 z-10" style="height:15%; background: linear-gradient(180deg,#ffe84d 0%,#f5a500 55%,#e09000 100%);" />
-                  <div class="absolute bottom-0 left-0 right-0 z-10" style="height:15%; background: linear-gradient(0deg,#ffe84d 0%,#f5a500 55%,#e09000 100%);" />
-                  <div class="absolute z-20 flex flex-col items-center justify-between w-full" style="top:15%; bottom:15%; padding:2% 4%;">
-                    <div class="flex flex-1 items-center justify-center">
-                      <span style="font-family:'Rubik','Arial Black',Arial,sans-serif; font-weight:900; font-size:1.2rem; color:#ffe033; line-height:1; text-shadow:0 2px 0 rgba(100,50,0,0.6),0 4px 8px rgba(0,0,0,0.5);">{{ lbl }}</span>
-                    </div>
-                    <div style="background:#fff; clip-path:polygon(9px 0%,calc(100% - 9px) 0%,100% 50%,calc(100% - 9px) 100%,9px 100%,0% 50%); padding:2px; margin-bottom:2%;">
-                      <div style="background:#cc0010; clip-path:polygon(7px 0%,calc(100% - 7px) 0%,100% 50%,calc(100% - 7px) 100%,7px 100%,0% 50%); padding:2px 10px; display:flex; align-items:center; justify-content:center; min-width:50px;">
-                        <span style="font-family:'Rubik','Arial Black',Arial,sans-serif; font-weight:900; font-size:0.38rem; color:#fff; letter-spacing:0.08em; white-space:nowrap;">
-                          {{ form.envelopeBrand || gameCtx.gameName || 'המירוץ לצפון' }}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Quick save -->
-              <div class="flex justify-end pt-1">
-                <button
-                  @click="saveCheckpoint"
-                  :disabled="saving || !form.title.trim()"
-                  class="btn-primary text-sm py-2 px-5 flex items-center gap-2"
-                >
-                  <svg v-if="!saving" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-                  <svg v-else class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                  {{ saving ? t('common.loading') : t('admin.checkpoints.save') }}
+              <span class="text-sm font-semibold text-slate-300">{{ t('admin.checkpoints.showMap') }}</span>
+              <span class="text-xs text-slate-500">{{ t('admin.checkpoints.showMapHint') }}</span>
+            </label>
+            <template v-if="form.showMap">
+              <div class="flex gap-3">
+                <button v-for="type in ['coordinates', 'image']" :key="type" @click="form.mapType = type"
+                  :class="['px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-colors', form.mapType === type ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-slate-600 bg-slate-700 text-slate-400']">
+                  {{ type === 'coordinates' ? t('admin.checkpoints.mapTypeCoords') : t('admin.checkpoints.mapTypeImage') }}
                 </button>
               </div>
-            </div>
+              <div v-if="form.mapType === 'coordinates'">
+                <MapPicker :lat="form.mapLat" :lng="form.mapLng" :zoom="form.mapZoom" :tileType="form.mapTileType"
+                  @update:lat="form.mapLat = $event" @update:lng="form.mapLng = $event" @update:zoom="form.mapZoom = $event" @update:tileType="form.mapTileType = $event" />
+              </div>
+              <div v-else>
+                <label class="block text-sm font-semibold text-slate-300 mb-1">{{ t('admin.checkpoints.mapImage') }}</label>
+                <input type="file" accept="image/*" @change="onImageChange" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-500/20 file:text-blue-400 hover:file:bg-blue-500/30 cursor-pointer" />
+                <img v-if="imagePreview" :src="imagePreview" class="mt-2 w-full max-h-40 object-contain rounded-lg bg-slate-900" />
+              </div>
+            </template>
           </div>
         </div>
 
@@ -1492,6 +1444,77 @@ const stageModeLabel = (cp) => {
             </div>
           </div>
         </div><!-- /carte points -->
+
+        <!-- ══════════════════════════════════════════════════════
+             CARTE 5 — Enveloppes — Texte d'affichage
+        ══════════════════════════════════════════════════════ -->
+        <div class="rounded-2xl border border-slate-700 overflow-hidden">
+          <button type="button" @click="toggle('envelope')" class="w-full flex items-center justify-between gap-2 px-5 py-3 bg-slate-800 hover:bg-slate-700/80 transition-colors text-start">
+            <div class="flex items-center gap-2">
+              <span>✉️</span>
+              <h3 class="text-xs font-black text-amber-400 uppercase tracking-wider">{{ t('admin.checkpoints.envelopeSection') }}</h3>
+            </div>
+            <svg class="w-4 h-4 text-slate-400 transition-transform shrink-0" :class="sections.envelope ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div v-show="sections.envelope" class="bg-slate-800/40 p-5 space-y-5">
+            <div class="space-y-4">
+              <p class="text-xs text-slate-500">{{ t('admin.checkpoints.envelopeSectionHint') }}</p>
+              <div class="grid md:grid-cols-3 gap-4">
+                <div>
+                  <label class="block text-sm font-semibold text-slate-300 mb-1">
+                    {{ t('admin.checkpoints.envelopeBrand') }}
+                    <span class="text-xs text-slate-500 font-normal ms-1">(défaut : nom du jeu)</span>
+                  </label>
+                  <input v-model="form.envelopeBrand" class="input-field text-center font-mono tracking-widest"
+                    :placeholder="gameCtx.gameName || 'המירוץ לצפון'" />
+                </div>
+                <div>
+                  <label class="block text-sm font-semibold text-amber-400 mb-1">{{ t('admin.checkpoints.envelope1Label') }}</label>
+                  <input v-model="form.envelope1Label" class="input-field text-center font-black text-lg" placeholder="יעד" />
+                </div>
+                <div>
+                  <label class="block text-sm font-semibold text-amber-400 mb-1">{{ t('admin.checkpoints.envelope2Label') }}</label>
+                  <input v-model="form.envelope2Label" class="input-field text-center font-black text-lg" placeholder="משימה" />
+                </div>
+              </div>
+              <!-- Aperçu live -->
+              <div class="flex gap-4 justify-center">
+                <div v-for="(lbl, i) in [form.envelope1Label || 'יעד', form.envelope2Label || 'משימה']" :key="i"
+                     class="rounded-xl overflow-hidden shadow-xl flex-1 max-w-[180px]"
+                     style="aspect-ratio: 1.9 / 1; position: relative;">
+                  <div class="absolute inset-0" style="background: radial-gradient(ellipse at 50% 35%, #3d72d8 0%, #1e4dbf 35%, #0e2e90 65%, #071a60 100%);" />
+                  <div class="absolute top-0 left-0 right-0 z-10" style="height:15%; background: linear-gradient(180deg,#ffe84d 0%,#f5a500 55%,#e09000 100%);" />
+                  <div class="absolute bottom-0 left-0 right-0 z-10" style="height:15%; background: linear-gradient(0deg,#ffe84d 0%,#f5a500 55%,#e09000 100%);" />
+                  <div class="absolute z-20 flex flex-col items-center justify-between w-full" style="top:15%; bottom:15%; padding:2% 4%;">
+                    <div class="flex flex-1 items-center justify-center">
+                      <span style="font-family:'Rubik','Arial Black',Arial,sans-serif; font-weight:900; font-size:1.2rem; color:#ffe033; line-height:1; text-shadow:0 2px 0 rgba(100,50,0,0.6),0 4px 8px rgba(0,0,0,0.5);">{{ lbl }}</span>
+                    </div>
+                    <div style="background:#fff; clip-path:polygon(9px 0%,calc(100% - 9px) 0%,100% 50%,calc(100% - 9px) 100%,9px 100%,0% 50%); padding:2px; margin-bottom:2%;">
+                      <div style="background:#cc0010; clip-path:polygon(7px 0%,calc(100% - 7px) 0%,100% 50%,calc(100% - 7px) 100%,7px 100%,0% 50%); padding:2px 10px; display:flex; align-items:center; justify-content:center; min-width:50px;">
+                        <span style="font-family:'Rubik','Arial Black',Arial,sans-serif; font-weight:900; font-size:0.38rem; color:#fff; letter-spacing:0.08em; white-space:nowrap;">
+                          {{ form.envelopeBrand || gameCtx.gameName || 'המירוץ לצפון' }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quick save -->
+              <div class="flex justify-end pt-1">
+                <button
+                  @click="saveCheckpoint"
+                  :disabled="saving || !form.title.trim()"
+                  class="btn-primary text-sm py-2 px-5 flex items-center gap-2"
+                >
+                  <svg v-if="!saving" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                  <svg v-else class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  {{ saving ? t('common.loading') : t('admin.checkpoints.save') }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- Validation error -->
         <Transition name="feedback">

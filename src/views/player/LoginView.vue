@@ -22,18 +22,18 @@ const dayLabel = computed(() => isDay2.value
   : (locale.value === 'en' ? 'Day 1' : 'יום 1')
 )
 
-const identifier = ref('')  // used for list mode (phone)
 const pseudo     = ref('')  // used for open mode
+const phone      = ref('')  // phone: identifier in list mode, contact number in open mode
 const formError  = ref('')
 const settings   = ref({})
 
 const isOpenMode = computed(() => settings.value.registrationMode === 'open')
 
-// List mode: phone digits only
+// Digits-only filter for the phone field
 const onPhoneInput = (e) => {
   const raw    = e.target.value
   const digits = raw.replace(/\D/g, '')
-  identifier.value = digits
+  phone.value = digits
   if (digits.length < raw.length) {
     formError.value = t('login.errors.digitsOnly')
   } else if (formError.value === t('login.errors.digitsOnly')) {
@@ -49,11 +49,11 @@ const goToGame = () => {
   router.push({ name: 'Intro', params: { gameId: gameCtx.gameId }, state: { settings: JSON.stringify(settings.value) } })
 }
 
-// List mode submit
+// List mode submit — phone is the identifier
 const submitList = async () => {
   formError.value = ''
-  if (!identifier.value.trim()) { formError.value = t('login.errors.emptyIdentifier'); return }
-  const ok = await auth.login(identifier.value.trim(), '', isDay2.value ? 2 : 1, isVerif.value)
+  if (!phone.value.trim()) { formError.value = t('login.errors.emptyIdentifier'); return }
+  const ok = await auth.login(phone.value.trim(), '', isDay2.value ? 2 : 1, isVerif.value, phone.value.trim())
   if (ok) {
     goToGame()
   } else if (auth.error === 'NOT_ON_LIST') {
@@ -72,7 +72,8 @@ const submitOpen = async () => {
   formError.value = ''
   if (!pseudo.value.trim()) { formError.value = t('login.errors.emptyPseudo'); return }
   if (pseudo.value.trim().length < 2) { formError.value = t('login.errors.pseudoTooShort'); return }
-  const ok = await auth.loginOpen(pseudo.value, isDay2.value ? 2 : 1, isVerif.value)
+  if (!phone.value.trim()) { formError.value = t('login.errors.emptyPhone'); return }
+  const ok = await auth.loginOpen(pseudo.value, isDay2.value ? 2 : 1, isVerif.value, phone.value.trim())
   if (ok) {
     goToGame()
   } else if (auth.error === 'INVALID_PSEUDO') {
@@ -97,9 +98,10 @@ const submit = () => isOpenMode.value ? submitOpen() : submitList()
         <div class="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-slate-800 flex items-center justify-center">
           <img :src="gameCtx.logoUrl || defaultLogo" alt="logo" class="w-full h-full object-contain p-0.5" />
         </div>
-        <span class="font-bold text-amber-400 text-xl" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
+        <span v-if="gameCtx.settingsLoaded" class="font-bold text-amber-400 text-xl" style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
           {{ (locale === 'en' ? gameCtx.appTitleEn : gameCtx.appTitle) || gameCtx.gameName || t('app.name') }}
         </span>
+        <span v-else class="h-5 w-32 rounded-md bg-slate-700 animate-pulse block" />
       </div>
       <LanguageToggle />
     </div>
@@ -112,10 +114,11 @@ const submit = () => isOpenMode.value ? submitOpen() : submitList()
              alt="logo"
              class="mx-auto mb-5"
              style="max-width: 180px; max-height: 120px; object-fit: contain;" />
-        <h1 class="text-3xl font-bold text-white"
+        <h1 v-if="gameCtx.settingsLoaded" class="text-3xl font-bold text-white"
             style="font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;">
           {{ (locale === 'en' ? gameCtx.loginTitleEn : gameCtx.loginTitle) || t('login.title') }}
         </h1>
+        <div v-else class="h-9 w-48 rounded-lg bg-slate-700 animate-pulse mx-auto" />
         <p class="text-slate-400 text-sm mt-2">{{ settings.eventName || t('app.tagline') }}</p>
         <div v-if="isDay2 || settings.gameDays > 1" class="flex items-center justify-center mt-4">
           <span class="px-4 py-1 rounded-full text-sm font-bold"
@@ -148,24 +151,24 @@ const submit = () => isOpenMode.value ? submitOpen() : submitList()
             </div>
           </template>
 
-          <!-- ── List mode: identifiant (téléphone) ── -->
-          <template v-else>
-            <div>
-              <label class="block text-sm font-semibold text-slate-300 mb-2">{{ t('login.identifierLabel') }}</label>
-              <input
-                :value="identifier"
-                @input="onPhoneInput"
-                @keyup.enter="submit"
-                type="tel"
-                inputmode="numeric"
-                pattern="[0-9]*"
-                class="input-field text-lg font-semibold"
-                :placeholder="t('login.identifierPlaceholder')"
-                maxlength="15"
-                autocomplete="tel"
-              />
-            </div>
-          </template>
+          <!-- ── Phone field (list mode = identifier, open mode = contact) ── -->
+          <div>
+            <label class="block text-sm font-semibold text-slate-300 mb-2">
+              {{ isOpenMode ? t('login.phoneLabel') : t('login.identifierLabel') }}
+            </label>
+            <input
+              :value="phone"
+              @input="onPhoneInput"
+              @keyup.enter="submit"
+              type="tel"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              class="input-field text-lg font-semibold"
+              :placeholder="t('login.identifierPlaceholder')"
+              maxlength="15"
+              autocomplete="tel"
+            />
+          </div>
 
           <!-- Error -->
           <Transition name="slide-down">

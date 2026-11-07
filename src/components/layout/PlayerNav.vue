@@ -86,7 +86,7 @@ const confirmExit = async () => {
 
           <!-- Leaderboard -->
           <RouterLink
-            to="/leaderboard"
+            :to="`/g/${gameCtx.gameId}/leaderboard`"
             @click="closeMenu"
             class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-colors"
           >

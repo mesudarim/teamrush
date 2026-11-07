@@ -24,7 +24,7 @@ export const useAuthStore = defineStore('auth', () => {
   const _gameId = () => useGameContextStore().gameId
 
   // Mode liste : login par téléphone / nom / email (liste préchargée)
-  const login = async (identifier, trackId, day = 1, isVerif = false) => {
+  const login = async (identifier, trackId, day = 1, isVerif = false, phone = '') => {
     isLoading.value = true
     error.value = null
     const gid = _gameId()
@@ -34,7 +34,8 @@ export const useAuthStore = defineStore('auth', () => {
 
       const teamPseudo = found.id
       participant.value = found
-      team.value = await createTeam(gid, teamPseudo, trackId, found.name ?? '', found, day, isVerif)
+      const resolvedPhone = phone || found.phone || identifier
+      team.value = await createTeam(gid, teamPseudo, trackId, found.name ?? '', found, day, isVerif, resolvedPhone)
 
       updateParticipant(gid, found.id, { loggedIn: true, teamId: teamPseudo, lastLoginAt: new Date() }).catch(() => {})
 
@@ -50,7 +51,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // Mode ouvert : inscription libre avec un pseudo choisi par le joueur
-  const loginOpen = async (chosenPseudo, day = 1, isVerif = false) => {
+  const loginOpen = async (chosenPseudo, day = 1, isVerif = false, phone = '') => {
     isLoading.value = true
     error.value = null
     const gid = _gameId()
@@ -58,7 +59,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!slug || slug === '.' || slug === '..') { error.value = 'INVALID_PSEUDO'; isLoading.value = false; return false }
     try {
       // createTeam handles both new teams and returning players with the same pseudo
-      team.value = await createTeam(gid, slug, '', chosenPseudo.trim(), null, day, isVerif)
+      team.value = await createTeam(gid, slug, '', chosenPseudo.trim(), null, day, isVerif, phone)
       participant.value = null  // pas de participant doc en mode ouvert
       localStorage.setItem(pseudoKey(gid), slug)
       return true
@@ -122,12 +123,17 @@ export const useAuthStore = defineStore('auth', () => {
     team.value = await getTeam(_gameId(), pseudo.value)
   }
 
+  const patchTeamLocally = (updates) => {
+    if (!team.value) return
+    team.value = { ...team.value, ...updates }
+  }
+
   const getLoginDayKey = (gid) => loginDayKey(gid ?? _gameId())
 
   return {
     team, participant, isLoading, error,
     isLoggedIn, pseudo, trackId,
     login, loginOpen, logout, logoutAndSetInactive, resetAndLogout,
-    restoreSession, refreshTeam, getLoginDayKey,
+    restoreSession, refreshTeam, patchTeamLocally, getLoginDayKey,
   }
 })

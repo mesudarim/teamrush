@@ -1,9 +1,13 @@
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useCachedImage } from '@/composables/useCachedImage'
 
 const props = defineProps({
   checkpoint: { type: Object, required: true },
 })
+
+const mapImageUrl = computed(() => props.checkpoint.mapImageUrl ?? '')
+const mapImageSrc = useCachedImage(mapImageUrl)
 
 const TILES = {
   street: {
@@ -54,7 +58,7 @@ onUnmounted(() => { leafletMap?.remove() })
     <!-- Image map -->
     <div v-if="checkpoint.mapType === 'image' && checkpoint.mapImageUrl" class="relative">
       <img
-        :src="checkpoint.mapImageUrl"
+        :src="mapImageSrc"
         alt="Map"
         class="w-full rounded-xl object-contain max-h-64"
       />

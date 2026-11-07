@@ -57,7 +57,7 @@ export const useLeaderboardStore = defineStore('leaderboard', () => {
 
   const day1PointsFor = (team) => {
     if (team.day1Points != null) return team.day1Points
-    if (team.day !== 2 && !team.isFinished) return team.points ?? 0
+    if (team.day !== 2) return team.points ?? 0
     const d2 = _day2FromCheckpoints(team)
     return d2 != null ? Math.max(0, (team.points ?? 0) - d2) : 0
   }

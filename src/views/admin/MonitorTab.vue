@@ -442,6 +442,7 @@ const confirmReset = async (pseudo) => {
           <tr class="border-b border-slate-700">
             <th class="text-start px-4 py-3 text-slate-400 font-semibold">#</th>
             <th class="text-start px-4 py-3 text-slate-400 font-semibold">{{ t('admin.monitor.team') }}</th>
+            <th class="text-start px-4 py-3 text-slate-400 font-semibold hidden md:table-cell">{{ t('admin.monitor.phone') }}</th>
             <th class="text-start px-4 py-3 text-slate-400 font-semibold">{{ t('admin.monitor.track') }}</th>
             <th class="text-center px-4 py-3 text-slate-400 font-semibold">{{ t('admin.monitor.checkpoint') }}</th>
             <th class="text-center px-4 py-3 text-slate-400 font-semibold">{{ t('admin.monitor.points') }}</th>
@@ -465,6 +466,7 @@ const confirmReset = async (pseudo) => {
             <td class="px-4 py-3">
               <span class="font-semibold text-white">{{ team.displayName || team.pseudo }}</span>
             </td>
+            <td class="px-4 py-3 text-slate-400 font-mono text-sm hidden md:table-cell">{{ team.phone || '—' }}</td>
             <td class="px-4 py-3 text-slate-300">{{ trackMap[team.trackId]?.name ?? team.trackId }}</td>
             <td class="px-4 py-3 text-center">
               <span class="font-semibold text-slate-200">
@@ -513,6 +515,7 @@ const confirmReset = async (pseudo) => {
           <tr class="border-b border-slate-700">
             <th class="text-start px-4 py-3 text-slate-400 font-semibold">#</th>
             <th class="text-start px-4 py-3 text-slate-400 font-semibold">{{ t('admin.monitor.team') }}</th>
+            <th class="text-start px-4 py-3 text-slate-400 font-semibold hidden md:table-cell">{{ t('admin.monitor.phone') }}</th>
             <th class="text-start px-4 py-3 text-slate-400 font-semibold">{{ t('admin.monitor.track') }}</th>
             <th class="text-center px-4 py-3 text-slate-400 font-semibold">{{ t('admin.monitor.checkpoint') }}</th>
             <th class="text-center px-4 py-3 text-slate-400 font-semibold">Pts J2</th>
@@ -535,6 +538,7 @@ const confirmReset = async (pseudo) => {
                 <span class="font-semibold text-white">{{ team.displayName || team.pseudo }}</span>
                 <span class="ml-1 text-slate-500 text-xs">{{ expandedDebug === team.pseudo ? '▲' : '▼' }}</span>
               </td>
+              <td class="px-4 py-3 text-slate-400 font-mono text-sm hidden md:table-cell">{{ team.phone || '—' }}</td>
               <td class="px-4 py-3 text-slate-300">{{ trackMap[team.trackId]?.name ?? team.trackId }}</td>
               <td class="px-4 py-3 text-center">
                 <span class="font-semibold text-slate-200">

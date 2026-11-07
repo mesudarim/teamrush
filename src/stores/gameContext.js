@@ -11,6 +11,7 @@ export const useGameContextStore = defineStore('gameContext', () => {
   const appTitleEn   = ref('')
   const loginTitle   = ref('')
   const loginTitleEn = ref('')
+  const settingsLoaded = ref(false)
 
   let unsub         = null
   let unsubSettings = null
@@ -18,6 +19,7 @@ export const useGameContextStore = defineStore('gameContext', () => {
   const setGame = (id) => {
     if (!id || id === gameId.value) return
     gameId.value = id
+    settingsLoaded.value = false
     unsub?.()
     unsubSettings?.()
 
@@ -35,6 +37,7 @@ export const useGameContextStore = defineStore('gameContext', () => {
         loginTitle.value   = d.loginTitle   ?? ''
         loginTitleEn.value = d.loginTitleEn ?? ''
       }
+      settingsLoaded.value = true
     })
   }
 
@@ -43,5 +46,5 @@ export const useGameContextStore = defineStore('gameContext', () => {
     unsub = null; unsubSettings = null
   }
 
-  return { gameId, gameName, logoUrl, appTitle, appTitleEn, loginTitle, loginTitleEn, setGame, cleanup }
+  return { gameId, gameName, logoUrl, appTitle, appTitleEn, loginTitle, loginTitleEn, settingsLoaded, setGame, cleanup }
 })

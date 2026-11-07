@@ -6,6 +6,7 @@ import QrScanner from '@/components/ui/QrScanner.vue'
 import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
 import { useSound } from '@/composables/useSound'
+import { useCachedImage } from '@/composables/useCachedImage'
 
 const { t, locale } = useI18n()
 const game = useGameStore()
@@ -21,6 +22,7 @@ const instruction = computed(() => {
   return cp.value?.description || t('game.stage1.instruction')
 })
 const stage1ImageUrl = computed(() => cp.value?.stage1ImageUrl ?? '')
+const stage1ImageSrc = useCachedImage(stage1ImageUrl)
 
 const input = ref('')
 const submitted = ref(false)
@@ -193,7 +195,7 @@ const submitMulti = async () => {
       <!-- ── MISSING WORD MODE ── -->
       <div v-if="mode === 'missingWord'" class="space-y-3">
         <div v-if="stage1ImageUrl" class="rounded-2xl overflow-hidden border border-slate-700 bg-slate-900">
-          <img :src="stage1ImageUrl" class="w-full object-cover" style="max-height: 260px; object-position: center;" />
+          <img :src="stage1ImageSrc" class="w-full object-cover" style="max-height: 260px; object-position: center;" />
         </div>
         <input
           v-model="input"
